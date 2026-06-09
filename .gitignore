@@ -48,3 +48,7 @@ desktop.ini
 
 # ── Jaguar ──────────────────────────────────────────
 .jaguar/
+
+# ── Claude.md (AI assistant context files) ──────────
+claude.md
+**/claude.md
