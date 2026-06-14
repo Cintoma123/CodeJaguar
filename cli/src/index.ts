@@ -22,6 +22,12 @@ import figlet from "figlet";
 import { registerKeyCommand } from "./commands/auth.js";
 import { registerReviewCommand } from "./commands/review.js";
 import { registerSecurityCommand } from "./commands/security.js";
+import { registerArchitectureCommand } from "./commands/architecture.js";
+import { registerSummaryCommand } from "./commands/summary.js";
+import { registerMemoryCommand } from "./commands/memory.js";
+import { registerRulesCommand } from "./commands/rules.js";
+import { registerProtectCommand } from "./commands/protect.js";
+import { runSplash } from "./utils/splash.js";
 
 // Create the main program
 const program = new Command();
@@ -35,53 +41,16 @@ program
 registerKeyCommand(program);
 registerReviewCommand(program);
 registerSecurityCommand(program);
+registerArchitectureCommand(program);
+registerSummaryCommand(program);
+registerMemoryCommand(program);
+registerRulesCommand(program);
+registerProtectCommand(program);
 
-// ── Placeholder commands (Week 2-3) ─────────────────────
-
-program
-  .command("security")
-  .description("Comprehensive security scan across source, dependencies, and infrastructure")
-  .action(() => {
-    console.log(chalk.yellow("⚠ Security command coming in Week 2."));
-  });
-
-program
-  .command("architecture")
-  .description("Analyze repository structure and identify architectural issues")
-  .action(() => {
-    console.log(chalk.yellow("⚠ Architecture command coming in Week 3."));
-  });
-
-program
-  .command("summary")
-  .description("Generate a GitHub-ready pull request summary")
-  .action(() => {
-    console.log(chalk.yellow("⚠ Summary command coming in Week 3."));
-  });
-
-program
-  .command("protect")
-  .description("Install local git hooks that scan for secrets before every commit")
-  .action(() => {
-    console.log(chalk.yellow("⚠ Protect command coming in Week 4."));
-  });
-
-program
-  .command("memory")
-  .description("Manage repository memory (context-aware reviews)")
-  .action(() => {
-    console.log(chalk.yellow("⚠ Memory command coming in Week 3."));
-  });
-
-program
-  .command("rules")
-  .description("Manage project-specific engineering rules")
-  .action(() => {
-    console.log(chalk.yellow("⚠ Rules command coming in Week 3."));
-  });
-
-// Display banner only when no arguments given (just `jaguar`)
-if (process.argv.length <= 2) {
+/**
+ * Print the figlet banner shown for a bare `jaguar` invocation.
+ */
+function printBanner(): void {
   console.log(
     chalk.cyan(
       figlet.textSync("CodeJaguar", {
@@ -93,5 +62,33 @@ if (process.argv.length <= 2) {
   console.log(chalk.gray(" AI Code Review & DevSecOps CLI\n"));
 }
 
-// Parse and execute
-program.parse(process.argv);
+async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const isHelpFlag = (a: string | undefined): boolean =>
+    a === "--help" || a === "-h" || a === "help";
+
+  // First-run splash: only for bare `jaguar` or `jaguar --help`.
+  const isBareOrHelp = args.length === 0 || (args.length === 1 && isHelpFlag(args[0]));
+
+  // Splash plays on every bare `jaguar` / `jaguar --help`, but only in a real
+  // terminal — piped/CI runs (`jaguar --help | cat`) get plain help instead.
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+
+  if (isBareOrHelp && interactive) {
+    await runSplash();
+    console.clear();
+    program.outputHelp();
+    return;
+  }
+
+  // Non-interactive bare/help, or a non-terminal: show help without animation.
+  if (isBareOrHelp) {
+    if (args.length === 0) printBanner();
+    program.outputHelp();
+    return;
+  }
+
+  program.parse(process.argv);
+}
+
+main();

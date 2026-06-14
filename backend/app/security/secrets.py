@@ -56,7 +56,7 @@ SECRET_PATTERNS: list[SecretPattern] = [
     SecretPattern(
         name="Azure Connection String",
         severity="CRITICAL",
-        pattern=r"DefaultEndpointsProtocol=https;AccountName=",
+        pattern=r"DefaultEndpointsProtocol=https;AccountName=",  # jaguar-ignore-line
         description="Azure connection string detected",
     ),
     SecretPattern(
@@ -124,6 +124,16 @@ class SecretFinding:
     recommendation: str
 
 
+# Inline allow-list markers. A line containing one of these is skipped by the
+# scanner — used to silence legitimate false positives (e.g. the pattern
+# definitions above, or documented example strings). Mirrors the CLI scanner.
+IGNORE_MARKERS = ("jaguar-ignore-line", "jaguar-ignore")
+
+
+def _has_ignore_marker(line: str) -> bool:
+    return any(marker in line for marker in IGNORE_MARKERS)
+
+
 def scan_file(file_path: str, content: str) -> list[SecretFinding]:
     """
     Scan a single file's content against all secret patterns.
@@ -143,6 +153,10 @@ def scan_file(file_path: str, content: str) -> list[SecretFinding]:
             # Skip comments (basic heuristic)
             stripped = line.strip()
             if stripped.startswith("//") or stripped.startswith("#") or stripped.startswith("*"):
+                continue
+
+            # Skip lines explicitly marked as a known-safe false positive.
+            if _has_ignore_marker(line):
                 continue
 
             matches = re.findall(pattern_def.pattern, line, re.IGNORECASE)

@@ -33,6 +33,22 @@ function git(args: string, cwd?: string): string {
 }
 
 /**
+ * Whether `cwd` is inside a git working tree.
+ */
+export function isGitRepository(cwd?: string): boolean {
+  return git("rev-parse --is-inside-work-tree", cwd) === "true";
+}
+
+/**
+ * Whether the repo has at least one commit (i.e. HEAD resolves).
+ * A freshly `git init`-ed repo with no commits has no HEAD, which breaks
+ * diff/log commands — callers should detect this and message clearly.
+ */
+export function hasCommits(cwd?: string): boolean {
+  return git("rev-parse --verify HEAD", cwd) !== "";
+}
+
+/**
  * Get the git diff (staged + unstaged changes).
  */
 export function getDiff(since?: string, cwd?: string): string {
