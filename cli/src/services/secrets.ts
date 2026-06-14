@@ -34,7 +34,7 @@ const SECRET_PATTERNS: SecretPattern[] = [
     pattern: /(?:aws_secret_access_key|aws_secret|secretAccessKey)\s*[:=]\s*['"][A-Za-z0-9/+=]{40}['"]/i,
   },
   { name: "GCP Service Account JSON", severity: "CRITICAL", pattern: /"type"\s*:\s*"service_account"/ },
-  { name: "Azure Connection String", severity: "CRITICAL", pattern: /DefaultEndpointsProtocol=https;AccountName=/ },
+  { name: "Azure Connection String", severity: "CRITICAL", pattern: /DefaultEndpointsProtocol=https;AccountName=/ }, // jaguar-ignore-line (pattern definition, not a real secret)
   { name: "Private RSA/EC Key", severity: "CRITICAL", pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/ },
   { name: "Stripe Secret Key", severity: "CRITICAL", pattern: /sk_(?:live|test)_[a-zA-Z0-9]{24,}/ },
   { name: "GitHub Personal Access Token", severity: "CRITICAL", pattern: /ghp_[a-zA-Z0-9]{36,}/ },
@@ -60,6 +60,18 @@ const SECRET_PATTERNS: SecretPattern[] = [
 ];
 
 /**
+ * Inline allow-list markers. A line containing `jaguar-ignore` (or
+ * `jaguar-ignore-line`) is skipped by the scanner — used to silence
+ * legitimate false positives such as the pattern definitions in this very
+ * file. Mirrors the backend's IGNORE_MARKERS.
+ */
+const IGNORE_MARKERS = ["jaguar-ignore-line", "jaguar-ignore"];
+
+function hasIgnoreMarker(line: string): boolean {
+  return IGNORE_MARKERS.some((marker) => line.includes(marker));
+}
+
+/**
  * Scan a single file's content against all secret patterns.
  */
 export function scanContent(filePath: string, content: string): SecretMatch[] {
@@ -71,6 +83,10 @@ export function scanContent(filePath: string, content: string): SecretMatch[] {
       const stripped = line.trim();
       // Skip obvious comment lines (basic heuristic, matches the backend).
       if (stripped.startsWith("//") || stripped.startsWith("#") || stripped.startsWith("*")) {
+        return;
+      }
+      // Skip lines explicitly marked as a known-safe false positive.
+      if (hasIgnoreMarker(line)) {
         return;
       }
       const m = pattern.exec(line);
