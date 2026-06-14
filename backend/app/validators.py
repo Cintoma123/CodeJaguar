@@ -2,7 +2,9 @@
 Pydantic request/response models for all API endpoints.
 """
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Shared ──────────────────────────────────────────────
@@ -19,6 +21,8 @@ class ReviewRequest(BaseModel):
     files: list[FileContent] = Field(default_factory=list)
     commits: list[str] = Field(default_factory=list)
     provider: str = "openai"
+    base_url: str | None = None
+    model: str | None = None
     memory: dict = Field(default_factory=dict)
     rules: str = ""
 
@@ -27,10 +31,25 @@ class ReviewFinding(BaseModel):
     severity: str  # HIGH, MEDIUM, LOW
     category: str  # Performance, Code Smell, Bug, etc.
     file: str
-    line: int | None = None
+    line: str | None = None  # Line number or range (e.g. "42" or "102-103")
     description: str
     impact: str
     recommendation: str
+
+    @field_validator("line", mode="before")
+    @classmethod
+    def normalize_line(cls, v: object) -> str | None:
+        """Accept ints or strings; enforce "<n>" or "<n>-<m>" format."""
+        if v is None:
+            return None
+        s = str(v).strip()
+        if not s:
+            return None
+        if not re.fullmatch(r"\d+(-\d+)?", s):
+            raise ValueError(
+                f"line must be a number or range like '42' or '102-103', got {s!r}"
+            )
+        return s
 
 
 class ReviewResponse(BaseModel):
@@ -51,6 +70,8 @@ class SecurityRequest(BaseModel):
     env_files: list[FileContent] = Field(default_factory=list)
     gitignore: str = ""
     provider: str = "openai"
+    base_url: str | None = None
+    model: str | None = None
     scan_modules: list[str] = Field(default_factory=lambda: ["all"])
     memory: dict = Field(default_factory=dict)
     rules: str = ""
@@ -87,6 +108,8 @@ class ArchitectureRequest(BaseModel):
     import_graph: dict = Field(default_factory=dict)
     config_files: list[FileContent] = Field(default_factory=list)
     provider: str = "openai"
+    base_url: str | None = None
+    model: str | None = None
     memory: dict = Field(default_factory=dict)
     rules: str = ""
 
@@ -114,6 +137,8 @@ class SummaryRequest(BaseModel):
     changed_files: list[str] = Field(default_factory=list)
     base_branch: str = "main"
     provider: str = "openai"
+    base_url: str | None = None
+    model: str | None = None
     memory: dict = Field(default_factory=dict)
     rules: str = ""
 

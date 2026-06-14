@@ -10,7 +10,6 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import ora from "ora";
 import axios from "axios";
 import * as readline from "node:readline";
 
@@ -21,6 +20,7 @@ import {
   listCredentials,
 } from "../providers/keychain.js";
 import { ensureBackend, getBackendPort } from "../services/backend.js";
+import { jaguarSpinner } from "../utils/loader.js";
 
 /**
  * Create a readline-based hidden input prompt.
@@ -105,10 +105,32 @@ export function registerKeyCommand(program: Command): void {
 
   // ── jaguar key add ───────────────────────────────
   key
-    .command("add <provider>")
+    .command("add [provider]")
     .description("Store an API key for a provider")
-    .action(async (provider: string) => {
-      const spinner = ora(`Setting up ${provider}...`).start();
+    .action(async (provider?: string) => {
+      if (!provider || provider.trim().length === 0) {
+        console.log(chalk.red("✗ Missing provider name.\n"));
+        console.log(chalk.bold("Usage:"));
+        console.log(`  ${chalk.cyan("jaguar key add [provider]")}\n`);
+        console.log(chalk.bold("Built-in providers:"));
+        console.log(
+          chalk.gray("  openai, anthropic, gemini, deepseek\n")
+        );
+        console.log(chalk.bold("Generic provider (custom base URL):"));
+        console.log(
+          chalk.gray(
+            "  Use any other name — you'll be prompted for a base URL.\n"
+          )
+        );
+        console.log(chalk.bold("Examples:"));
+        console.log(`  ${chalk.cyan("jaguar key add openai")}`);
+        console.log(
+          `  ${chalk.cyan("jaguar key add groq")}   ${chalk.gray("# generic, prompts for base URL")}`
+        );
+        process.exit(1);
+      }
+
+      const spinner = jaguarSpinner(`Setting up ${provider}...`).start();
 
       try {
         // Check if already exists
@@ -202,7 +224,7 @@ export function registerKeyCommand(program: Command): void {
     .command("test <provider>")
     .description("Test provider connectivity and API key validity")
     .action(async (provider: string) => {
-      const spinner = ora(`Testing ${provider} connection...`).start();
+      const spinner = jaguarSpinner(`Testing ${provider} connection...`).start();
 
       try {
         // Get the API key

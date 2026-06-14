@@ -17,6 +17,7 @@ If CRITICAL secrets are found, returns immediately with those findings.
 import json
 from typing import Any
 
+from ..budget import enforce_budget
 from ..provider_manager import get_provider
 from .secrets import scan_files as scan_secrets, has_critical_findings
 from .dependency import parse_all_dependency_files
@@ -45,9 +46,11 @@ def _parse_ai_response(response_text: str) -> list[dict]:
         return []
 
 
-def run_security_scan(
+async def run_security_scan(
     body: Any,
     api_key: str,
+    base_url: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """
     Run a comprehensive security scan.
@@ -55,6 +58,7 @@ def run_security_scan(
     Args:
         body: SecurityRequest with all file contents
         api_key: Provider API key
+        model: Optional model name override
 
     Returns:
         Dict with findings, stats, provider_used
@@ -179,11 +183,13 @@ def run_security_scan(
 
     # ── Step 7: AI-Powered Analysis ───────────────────────────────
     # Use AI for contextual analysis that rule-based checks can't catch
-    if source_files or dependency_files:
+    if source_files or dep_files:
         try:
             provider = get_provider(
                 name=body.provider,
                 api_key=api_key,
+                base_url=base_url,
+                model=model,
             )
 
             prompt = build_full_security_prompt(
@@ -202,6 +208,9 @@ def run_security_scan(
                 "Return findings as structured JSON. "
                 "Return ONLY the JSON object, no markdown fences, no extra text."
             )
+
+            # Enforce the token budget so we never send an oversized prompt.
+            prompt, _truncated = enforce_budget(prompt, system, body.provider)
 
             ai_response = await provider.complete(
                 prompt=prompt,

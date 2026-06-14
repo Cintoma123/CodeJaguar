@@ -2,25 +2,50 @@
  * Security scan command — comprehensive security analysis across source code,
  * dependencies, Docker files, GitHub Actions, environment files, and secrets.
  *
+ * Results are written to a scan-specific Markdown file (not the terminal),
+ * e.g. security-full-scan.md, security-secrets.md, security-deps.md.
+ *
  * Usage:
- *   jaguar security                        # Full scan
- *   jaguar security --only secrets         # Secrets only
- *   jaguar security --only deps            # Dependencies only
- *   jaguar security --only docker          # Docker files only
- *   jaguar security --only actions         # GitHub Actions only
- *   jaguar security --provider anthropic
+ *   jaguar security --provider anthropic                              # Full scan
+ *   jaguar security --provider anthropic --model claude-sonnet-4-20250514
+ *   jaguar security --only secrets --provider anthropic              # Secrets only
+ *   jaguar security --only deps --provider openai --model gpt-4o     # Dependencies only
+ *   jaguar security --only docker --provider anthropic               # Docker files only
+ *   jaguar security --only actions --provider anthropic              # GitHub Actions only
  */
 
 import { Command } from "commander";
 import chalk from "chalk";
-import ora from "ora";
 import axios from "axios";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { execSync } from "node:child_process";
 
 import { getCredential } from "../providers/keychain.js";
 import { ensureBackend, getBackendPort } from "../services/backend.js";
-import { renderSecurityResults } from "../services/output.js";
+import { getDefaultProvider, resolveBaseUrl, BUILT_IN_PROVIDERS } from "../services/provider.js";
+import { buildSecurityMarkdown } from "../services/output.js";
+import { startScan } from "../utils/loader.js";
+import { describeRequestError } from "../utils/errors.js";
+
+/**
+ * Map a scan mode (from --only, or undefined for a full scan) to a
+ * human-readable label and an output filename.
+ */
+function scanTarget(only?: string): { label: string; filename: string } {
+  const labels: Record<string, string> = {
+    secrets: "Secrets",
+    deps: "Dependencies",
+    docker: "Docker",
+    actions: "GitHub Actions",
+  };
+  if (!only) {
+    return { label: "Full Scan", filename: "security-full-scan.md" };
+  }
+  const key = only.toLowerCase();
+  const label = labels[key] ?? only;
+  return { label, filename: `security-${key}.md` };
+}
 
 /**
  * Collect files matching glob-like patterns from the project root.
@@ -30,7 +55,6 @@ function collect_files(
   cwd: string,
   max_total_size: number = 200000,
 ): Array<{ path: string; content: string }> {
-  const { execSync } = require("node:child_process");
   const results: Array<{ path: string; content: string }> = [];
   let total_size = 0;
 
@@ -83,9 +107,10 @@ export function registerSecurityCommand(program: Command): void {
     .command("security")
     .description("Comprehensive security scan across source, dependencies, and infrastructure")
     .option("--provider <name>", "AI provider to use (openai, anthropic, etc.)")
+    .option("--model <name>", "Model to use (e.g. gpt-4o, claude-sonnet-4-20250514, owl-alpha)")
     .option("--only <module>", "Run only a specific scan module (secrets, deps, docker, actions)")
-    .action(async (options: { provider?: string; only?: string }) => {
-      const spinner = ora("Preparing security scan...").start();
+    .action(async (options: { provider?: string; model?: string; only?: string }) => {
+      const spinner = startScan("jaguar security", "running 8 security modules...");
 
       try {
         // 1. Determine provider
@@ -106,6 +131,18 @@ export function registerSecurityCommand(program: Command): void {
           spinner.fail(
             chalk.red(
               `No API key found for ${provider}. Run \`jaguar key add ${provider}\` first.`
+            )
+          );
+          process.exit(1);
+        }
+
+        // 2b. Resolve base URL — generic (non-built-in) providers require one
+        const baseUrl = await resolveBaseUrl(provider);
+        if (!BUILT_IN_PROVIDERS.includes(provider.toLowerCase()) && !baseUrl) {
+          spinner.fail(
+            chalk.red(
+              `No base URL configured for generic provider "${provider}". ` +
+                `Run \`jaguar key add ${provider}\` to set one.`
             )
           );
           process.exit(1);
@@ -167,7 +204,7 @@ export function registerSecurityCommand(program: Command): void {
           process.exit(1);
         }
 
-        // 5. Call the backend
+        // 6. Call the backend
         spinner.text = `Running security scan with ${provider}...`;
         const scan_modules = options.only ? [options.only] : ["all"];
 
@@ -182,6 +219,8 @@ export function registerSecurityCommand(program: Command): void {
             env_files: env_files.map((f) => ({ path: f.path, content: f.content })),
             gitignore,
             provider,
+            base_url: baseUrl,
+            model: options.model,
             scan_modules,
             memory: {},
             rules: "",
@@ -217,33 +256,32 @@ export function registerSecurityCommand(program: Command): void {
 
         spinner.stop();
 
-        // 6. Render output
-        renderSecurityResults(
+        // 7. Write results to a scan-specific Markdown file (not the terminal)
+        const { label, filename } = scanTarget(options.only);
+        const reportPath = join(cwd, filename);
+        const markdown = buildSecurityMarkdown(
           result.findings,
           result.stats,
           result.provider_used,
+          options.model ?? "",
+          label,
+          new Date().toISOString()
+        );
+        writeFileSync(reportPath, markdown, "utf-8");
+
+        const { critical, high, medium, low } = result.stats;
+        spinner.succeed(
+          chalk.green(
+            `Security scan (${label}) complete — ` +
+              `${critical} critical, ${high} high, ${medium} medium, ${low} low written to ` +
+              chalk.bold(filename)
+          )
         );
       } catch (error: unknown) {
         spinner.fail(
-          chalk.red(
-            `Security scan failed: ${error instanceof Error ? error.message : String(error)}`
-          )
+          chalk.red(`Security scan failed: ${describeRequestError(error)}`)
         );
         process.exit(1);
       }
     });
-}
-
-/**
- * Get the default provider from keychain.
- */
-async function getDefaultProvider(): Promise<string | null> {
-  const providers = ["openai", "anthropic", "gemini", "deepseek"];
-  for (const provider of providers) {
-    const key = await getCredential(provider);
-    if (key) {
-      return provider;
-    }
-  }
-  return null;
 }

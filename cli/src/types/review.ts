@@ -6,7 +6,7 @@ export interface ReviewFinding {
   severity: string;
   category: string;
   file: string;
-  line?: number;
+  line?: string; // Line number or range (e.g. "42" or "102-103")
   description: string;
   impact: string;
   recommendation: string;

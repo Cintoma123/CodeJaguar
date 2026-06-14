@@ -4,18 +4,21 @@ Review service — orchestrates the code review flow.
 Week 1: Basic prompt → provider → parse response → return findings.
 """
 
+from ..budget import enforce_budget
+from ..provider_errors import describe_provider_error
 from ..provider_manager import get_provider
 from ..validators import ReviewRequest
 from .prompts import build_review_prompt
 
 
-async def run_review(body: ReviewRequest, api_key: str) -> dict:
+async def run_review(body: ReviewRequest, api_key: str, base_url: str | None = None, model: str | None = None) -> dict:
     """
     Run a code review using the specified provider.
 
     Args:
         body: The review request with diff, files, commits, etc.
         api_key: The provider API key (from header)
+        model: Optional model name override
 
     Returns:
         Dict with findings, summary, provider_used, model_used
@@ -23,11 +26,21 @@ async def run_review(body: ReviewRequest, api_key: str) -> dict:
     # Build the prompt
     prompt = build_review_prompt(body)
 
-    # Instantiate provider
-    provider = get_provider(
-        name=body.provider,
-        api_key=api_key,
-    )
+    # Instantiate provider (config errors → graceful response, not a 500)
+    try:
+        provider = get_provider(
+            name=body.provider,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+        )
+    except Exception as e:
+        return {
+            "findings": [],
+            "summary": f"Error: {describe_provider_error(e)}",
+            "provider_used": body.provider,
+            "model_used": "",
+        }
 
     # System prompt for code review
     system = (
@@ -51,6 +64,9 @@ async def run_review(body: ReviewRequest, api_key: str) -> dict:
         "Return ONLY the JSON object, no markdown fences, no extra text."
     )
 
+    # Enforce the token budget so we never send an oversized prompt.
+    prompt, _truncated = enforce_budget(prompt, system, body.provider)
+
     # Call the provider
     try:
         response_text = await provider.complete(
@@ -62,7 +78,7 @@ async def run_review(body: ReviewRequest, api_key: str) -> dict:
     except Exception as e:
         return {
             "findings": [],
-            "summary": f"Error calling provider: {e}",
+            "summary": f"Error: {describe_provider_error(e)}",
             "provider_used": body.provider,
             "model_used": "",
         }

@@ -5,6 +5,7 @@ The API key is always passed via the X-Provider-Key header — never in the requ
 """
 
 from fastapi import APIRouter, Header
+from pydantic import BaseModel
 
 from ..provider_manager import get_provider
 from ..validators import (
@@ -22,6 +23,16 @@ from ..validators import (
 )
 
 router = APIRouter()
+
+
+class HealthResponse(BaseModel):
+    status: str = "ok"
+
+
+@router.get("/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
+    """Health check endpoint used by the CLI to verify the backend is running."""
+    return HealthResponse()
 
 
 @router.post("/providers/test", response_model=ProviderTestResponse)
@@ -51,6 +62,8 @@ async def review_code(
     result = await run_review(
         body=body,
         api_key=x_provider_key,
+        base_url=body.base_url,
+        model=body.model,
     )
     return ReviewResponse(**result)
 
@@ -66,6 +79,8 @@ async def security_scan(
     result = await run_security_scan(
         body=body,
         api_key=x_provider_key,
+        base_url=body.base_url,
+        model=body.model,
     )
     return SecurityResponse(**result)
 
@@ -76,13 +91,15 @@ async def architecture_review(
     x_provider_key: str = Header(..., alias="X-Provider-Key"),
 ) -> ArchitectureResponse:
     """Run an architecture review."""
-    # Placeholder — will be wired in Week 3
-    return ArchitectureResponse(
-        findings=[],
-        improvements=[],
-        recommendations="",
-        provider_used=body.provider,
+    from ..architecture.service import run_architecture_review
+
+    result = await run_architecture_review(
+        body=body,
+        api_key=x_provider_key,
+        base_url=getattr(body, "base_url", None),
+        model=getattr(body, "model", None),
     )
+    return ArchitectureResponse(**result)
 
 
 @router.post("/summary", response_model=SummaryResponse)
@@ -91,14 +108,12 @@ async def summary(
     x_provider_key: str = Header(..., alias="X-Provider-Key"),
 ) -> SummaryResponse:
     """Generate a PR summary."""
-    # Placeholder — will be wired in Week 3
-    return SummaryResponse(
-        markdown="",
-        provider_used=body.provider,
+    from ..summary.service import run_summary
+
+    result = await run_summary(
+        body=body,
+        api_key=x_provider_key,
+        base_url=getattr(body, "base_url", None),
+        model=getattr(body, "model", None),
     )
-
-
-@router.get("/health")
-async def health_check():
-    """Health check endpoint for the CLI backend lifecycle manager."""
-    return {"status": "ok"}
+    return SummaryResponse(**result)
