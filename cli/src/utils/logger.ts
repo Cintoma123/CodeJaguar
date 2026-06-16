@@ -13,7 +13,3 @@ export function debugLog(message: string, ...args: unknown[]): void {
     }
   }
 }
-
-export function errorLog(message: string): void {
-  process.stderr.write(`[jaguar:error] ${message}\n`);
-}

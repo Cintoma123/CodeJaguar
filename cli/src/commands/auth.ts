@@ -240,7 +240,9 @@ export function registerKeyCommand(program: Command): void {
 
         // Ensure backend is running
         spinner.text = "Starting backend...";
-        await ensureBackend();
+        await ensureBackend((msg) => {
+          spinner.text = msg;
+        });
         const port = getBackendPort();
 
         if (!port) {

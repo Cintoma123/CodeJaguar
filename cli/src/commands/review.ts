@@ -162,7 +162,9 @@ export function registerReviewCommand(program: Command): void {
 
         // Start backend
         spinner.text = "Connecting to backend...";
-        await ensureBackend();
+        await ensureBackend((msg) => {
+          spinner.text = msg;
+        });
         const port = getBackendPort();
         if (!port) {
           spinner.fail(chalk.red("Failed to start backend."));

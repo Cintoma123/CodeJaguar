@@ -22,9 +22,9 @@ Gemini, DeepSeek, or any OpenAI-compatible endpoint.
 ## 2. Install
 
 ```bash
-npm install -g codejaguar-review
+npm install -g codejaguar-cli
 # or
-bun install -g codejaguar-review
+bun install -g codejaguar-cli
 ```
 
 This adds the `jaguar` command to your `PATH`. Verify:

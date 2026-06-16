@@ -19,9 +19,3 @@ export interface SecurityStats {
   medium: number;
   low: number;
 }
-
-export interface SecurityResult {
-  findings: SecurityFinding[];
-  stats: SecurityStats;
-  provider_used: string;
-}

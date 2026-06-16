@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+/*
+ * Codejaguar landing page — design tokens (CLAUDE.md §2).
+ * Terminal-native aesthetic: monospace, dark, severity-coloured.
+ */
+
+@theme {
+  /* Surfaces */
+  --color-term-black: #0d0d0d;
+  --color-surface: #161616;
+  --color-surface-raised: #1e1e1e;
+
+  /* Borders */
+  --color-border-dim: #2a2a2a;
+  --color-border-bright: #3a3a3a;
+
+  /* Text */
+  --color-text-primary: #e8e6e3;
+  --color-text-secondary: #888580;
+  --color-text-tertiary: #555250;
+
+  /* Accent + severity */
+  --color-jaguar: #22c55e;
+  --color-jaguar-dim: #16a34a;
+  --color-critical: #ef4444;
+  --color-high: #f59e0b;
+  --color-medium: #3b82f6;
+  --color-low: #14b8a6;
+  --color-prompt: #a78bfa;
+
+  /* Fonts (wired up in layout.tsx via next/font) */
+  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", monospace;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Motion */
+  --animate-blink: blink 700ms steps(1) infinite;
+}
+
+:root {
+  --background: #0d0d0d;
+  --foreground: #e8e6e3;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Keyframes ─────────────────────────────────────── */
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scroll-x {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* ── Utility animation classes ─────────────────────── */
+
+.animate-blink {
+  animation: var(--animate-blink);
+}
+
+.fade-up {
+  opacity: 0;
+  animation: fade-up 0.5s ease-out forwards;
+}
+
+.fade-in {
+  opacity: 0;
+  animation: fade-in 0.4s ease-out forwards;
+}
+
+/* Reveal-on-scroll: starts hidden, .is-visible plays it (JS toggles). */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Horizontal marquee for the provider pills */
+.marquee-track {
+  animation: scroll-x 30s linear infinite;
+}
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+
+/* Custom scrollbar inside terminals */
+.term-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.term-scroll::-webkit-scrollbar-track { background: transparent; }
+.term-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-border-bright);
+  border-radius: 99px;
+}
+
+/* ── Reduced motion ────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .fade-up, .fade-in { opacity: 1; }
+  .reveal { opacity: 1; transform: none; }
+}

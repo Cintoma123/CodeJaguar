@@ -1,14 +1,23 @@
 /**
  * Backend lifecycle manager.
  *
- * Responsible for:
- * - Starting the FastAPI backend if not already running
- * - Health checking the backend
- * - Reading the port from ~/.jaguar/backend.port
- * - PID file management for process tracking
+ * The backend starts automatically before any command that needs it (via
+ * ensureBackend) and survives terminal closure (detached + unref), so it keeps
+ * running between commands — the user never starts or restarts it by hand.
+ *
+ * Port model: the backend self-assigns a free port on startup and writes it to
+ * ~/.jaguar/backend.port (and its PID to ~/.jaguar/backend.pid). The CLI only
+ * ever reads these — it never picks the port itself.
+ *
+ * Public surface:
+ * - isBackendRunning() — fast health probe; runs before every command
+ * - ensureBackend()    — start-if-needed; the single pre-command entry point
+ * - waitForBackend()   — poll until healthy, with a bounded timeout
+ * - stopBackend()      — SIGTERM the backend (used by `jaguar stop` only)
+ * - getBackendPort() / findBackendDir() / healthCheck() — helpers
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -16,6 +25,7 @@ import { spawn, execSync } from "node:child_process";
 import { get } from "node:http";
 
 import { debugLog } from "../utils/logger.js";
+import { ensureSetup, getVenvPython, type StatusFn } from "./setup.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -73,7 +83,10 @@ function isProcessRunning(pid: number): boolean {
 }
 
 /**
- * Health check the backend.
+ * GET /health on the given port. Resolves true only on HTTP 200, false on any
+ * error (connection refused, non-200, timeout). On a live localhost server this
+ * returns in well under 50ms; the 1000ms timeout only bounds the failure case,
+ * which keeps the fast path (backend already running) cheap.
  */
 export async function healthCheck(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -90,7 +103,7 @@ export async function healthCheck(port: number): Promise<boolean> {
       resolve(false);
     });
 
-    req.setTimeout(3000, () => {
+    req.setTimeout(1000, () => {
       req.destroy();
       resolve(false);
     });
@@ -98,29 +111,57 @@ export async function healthCheck(port: number): Promise<boolean> {
 }
 
 /**
- * Ensure the backend is running. If not, start it.
- * Returns the port the backend is listening on.
+ * Fast "is the backend up?" probe used before every command. Reads the port the
+ * backend last wrote and health-checks it. Returns false when no port is known
+ * yet (first run) or the server isn't answering.
  */
-export async function ensureBackend(): Promise<number> {
-  // Check if we already know the port and it's healthy
-  const existingPort = getBackendPort();
-  if (existingPort) {
-    const healthy = await healthCheck(existingPort);
-    if (healthy) {
-      debugLog(`Backend already running on port ${existingPort}`);
-      return existingPort;
-    }
-    debugLog(`Backend on port ${existingPort} is not healthy, restarting...`);
-  }
-
-  // Start the backend
-  return await startBackend();
+export async function isBackendRunning(): Promise<boolean> {
+  const port = getBackendPort();
+  if (!port) return false;
+  return healthCheck(port);
 }
 
 /**
- * Start the FastAPI backend as a child process.
+ * Poll until the backend answers /health, or throw once timeoutMs elapses.
+ * Polls every 300ms. Used after spawning the process to wait for readiness.
  */
-async function startBackend(): Promise<number> {
+export async function waitForBackend(timeoutMs = 8000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await isBackendRunning()) return;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error(
+    "Backend failed to start. Run `jaguar doctor` to diagnose."
+  );
+}
+
+/**
+ * Ensure the backend is running. If not, start it.
+ * Returns the port the backend is listening on.
+ */
+export async function ensureBackend(onStatus?: StatusFn): Promise<number> {
+  // Fast path: a healthy backend is already listening — return its port with no
+  // output and no extra work. This is the common case on every command.
+  const existingPort = getBackendPort();
+  if (existingPort && (await healthCheck(existingPort))) {
+    debugLog(`Backend already running on port ${existingPort}`);
+    return existingPort;
+  }
+  if (existingPort) {
+    debugLog(`Backend on port ${existingPort} is not healthy, restarting...`);
+  }
+
+  // Cold start (first run, or a dead/stale process): bring it up.
+  return await startBackend(onStatus);
+}
+
+/**
+ * Start the FastAPI backend as a child process. On first run this also creates
+ * the isolated Python venv and installs the backend dependencies (see
+ * setup.ts), reporting progress through onStatus when provided.
+ */
+async function startBackend(onStatus?: StatusFn): Promise<number> {
   if (!existsSync(JAGUAR_DIR)) {
     mkdirSync(JAGUAR_DIR, { recursive: true });
   }
@@ -137,14 +178,22 @@ async function startBackend(): Promise<number> {
 
   debugLog(`Starting backend from ${backendDir}`);
 
-  const pythonPath = findPythonPath();
-  if (!pythonPath) {
+  // First-run bootstrap: create ~/.jaguar/venv and install deps if needed.
+  // Fast no-op on every subsequent run.
+  await ensureSetup(backendDir, { onStatus });
+
+  const pythonPath = getVenvPython();
+  if (!existsSync(pythonPath)) {
     throw new Error(
-      "Could not find Python 3.14. " +
-        "Please install Python 3.14+ and ensure it's in your PATH."
+      "Backend Python environment is missing. Run `jaguar setup` to repair it."
     );
   }
 
+  onStatus?.("Starting backend…");
+
+  // Detached + unref so the backend outlives this CLI invocation and the
+  // terminal it was launched from. stdio is ignored — it self-daemonizes.
+  // main.py self-assigns a free port and writes ~/.jaguar/backend.{port,pid}.
   const child = spawn(pythonPath, ["main.py"], {
     cwd: backendDir,
     detached: true,
@@ -155,31 +204,24 @@ async function startBackend(): Promise<number> {
 
   debugLog(`Backend process started with PID ${child.pid}`);
 
-  // Wait for the backend to start up (poll health check)
-  let attempts = 0;
-  const maxAttempts = 30; // 30 seconds max wait
-  while (attempts < maxAttempts) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  // Wait for the server to answer /health (throws on timeout with a message
+  // that points at `jaguar doctor`).
+  await waitForBackend();
 
-    const port = getBackendPort();
-    if (port) {
-      const healthy = await healthCheck(port);
-      if (healthy) {
-        debugLog(`Backend started successfully on port ${port}`);
-        return port;
-      }
-    }
-
-    attempts++;
+  const port = getBackendPort();
+  if (!port) {
+    throw new Error(
+      "Backend started but never reported its port. Run `jaguar doctor` to diagnose."
+    );
   }
-
-  throw new Error("Backend failed to start within 30 seconds.");
+  debugLog(`Backend started successfully on port ${port}`);
+  return port;
 }
 
 /**
- * Find the backend directory.
+ * Find the backend directory (bundled at the package root as backend/).
  */
-function findBackendDir(): string | null {
+export function findBackendDir(): string | null {
   // Check relative to this file's location
   // cli/src/services/backend.ts -> backend/ is at ../../backend/
   const candidates = [
@@ -198,30 +240,6 @@ function findBackendDir(): string | null {
   const pkgDir = join(__dirname, "..", "..", "backend");
   if (existsSync(join(pkgDir, "main.py"))) {
     return pkgDir;
-  }
-
-  return null;
-}
-
-/**
- * Find the Python 3.14+ executable.
- */
-function findPythonPath(): string | null {
-  // Try common locations
-  const candidates = [
-    "python3",
-    "python",
-    join(homedir(), ".jaguar", "venv", "Scripts", "python.exe"), // Windows venv
-    join(homedir(), ".jaguar", "venv", "bin", "python"), // Unix venv
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      execSync(`${candidate} --version`, { stdio: "pipe" });
-      return candidate;
-    } catch {
-      // Try next candidate
-    }
   }
 
   return null;
