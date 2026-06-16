@@ -27,7 +27,9 @@ import { registerSummaryCommand } from "./commands/summary.js";
 import { registerMemoryCommand } from "./commands/memory.js";
 import { registerRulesCommand } from "./commands/rules.js";
 import { registerProtectCommand } from "./commands/protect.js";
+import { registerSetupCommand } from "./commands/setup.js";
 import { runSplash } from "./utils/splash.js";
+import { hasSeenSplash, markSplashSeen } from "./services/config.js";
 
 // Create the main program
 const program = new Command();
@@ -46,6 +48,7 @@ registerSummaryCommand(program);
 registerMemoryCommand(program);
 registerRulesCommand(program);
 registerProtectCommand(program);
+registerSetupCommand(program);
 
 /**
  * Print the figlet banner shown for a bare `jaguar` invocation.
@@ -70,12 +73,14 @@ async function main(): Promise<void> {
   // First-run splash: only for bare `jaguar` or `jaguar --help`.
   const isBareOrHelp = args.length === 0 || (args.length === 1 && isHelpFlag(args[0]));
 
-  // Splash plays on every bare `jaguar` / `jaguar --help`, but only in a real
-  // terminal — piped/CI runs (`jaguar --help | cat`) get plain help instead.
+  // Splash plays once, on the first bare `jaguar` / `jaguar --help`, and only in
+  // a real terminal — piped/CI runs (`jaguar --help | cat`) get plain help. Once
+  // seen, it never replays (the flag persists in ~/.jaguar/config.json).
   const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
-  if (isBareOrHelp && interactive) {
+  if (isBareOrHelp && interactive && !hasSeenSplash()) {
     await runSplash();
+    markSplashSeen();
     console.clear();
     program.outputHelp();
     return;
