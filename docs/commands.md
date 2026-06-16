@@ -4,7 +4,7 @@ Every CodeJaguar command and flag. Commands that produce a report write it to a
 Markdown file in the project root rather than printing to the terminal.
 
 > **Note on naming:** credentials are managed with `jaguar key` (the binary is
-> `jaguar`, published as the npm package `codejaguar-review`).
+> `jaguar`, published as the npm package `codejaguar-cli`).
 
 ---
 
@@ -195,6 +195,48 @@ jaguar protect --remove
 
 CRITICAL/HIGH secret matches block the commit; MEDIUM matches warn but allow it.
 Bypass with `git commit --no-verify`.
+
+---
+
+## `jaguar doctor`
+
+Diagnose your CodeJaguar setup. Run this first whenever a command fails to start
+the backend — it prints a clear pass/fail for each part of the environment and
+tells you how to fix anything that's broken.
+
+| Check | What it verifies |
+|-------|------------------|
+| Backend source | The bundled Python backend is present in the package. |
+| System Python | A Python 3.10+ interpreter is on your PATH (used to build the venv). |
+| Backend venv | The isolated environment exists at `~/.jaguar/venv`. |
+| Dependencies | fastapi, uvicorn, httpx, keyring, and pydantic import cleanly. |
+| Backend service | Whether a backend is currently running (it starts on demand). |
+| Provider keys | At least one provider API key is configured. |
+
+```bash
+jaguar doctor
+```
+
+---
+
+## `jaguar setup`
+
+> You normally never run this. The first command that needs the backend (e.g.
+> `jaguar review`) creates the Python environment and installs dependencies
+> automatically. `setup` exists only to repair a broken environment.
+
+Reinstall or rebuild the local Python backend environment. Use it when
+`jaguar doctor` reports a broken venv or missing dependencies.
+
+| Flag | Description |
+|------|-------------|
+| *(none)* | Reinstall the venv and dependencies if they're missing or out of date. |
+| `--force` | Delete `~/.jaguar/venv` and rebuild it from scratch. |
+
+```bash
+jaguar setup           # repair a broken environment
+jaguar setup --force   # rebuild the venv from scratch
+```
 
 ---
 

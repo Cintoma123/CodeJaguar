@@ -48,9 +48,9 @@ provider you configured.
 ## Installation
 
 ```bash
-npm install -g codejaguar-review
+npm install -g codejaguar-cli
 # or
-bun install -g codejaguar-review
+bun install -g codejaguar-cli
 ```
 
 This installs the `jaguar` command globally.

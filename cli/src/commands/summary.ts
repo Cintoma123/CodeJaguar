@@ -125,7 +125,9 @@ export function registerSummaryCommand(program: Command): void {
 
         // 4. Start backend
         spinner.text = "Connecting to backend...";
-        await ensureBackend();
+        await ensureBackend((msg) => {
+          spinner.text = msg;
+        });
         const port = getBackendPort();
         if (!port) {
           spinner.fail(chalk.red("Failed to start backend."));

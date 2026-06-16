@@ -1,8 +1,8 @@
 /**
  * Git context extraction service.
  *
- * Extracts git diff, log, changed files, and file tree
- * using simple-git or direct git commands.
+ * Extracts git diff, log, changed files, and file tree by shelling out to the
+ * system `git` (via execSync).
  */
 
 import { execSync } from "node:child_process";
