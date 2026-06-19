@@ -1,5 +1,5 @@
 
-name: Publish codejaguar-review
+name: Publish codejaguar-cli
 
 # Publishes the CLI package to both the public npm registry and GitHub Packages.
 # The package bundles the compiled TypeScript CLI (cli/dist) and the Python
@@ -7,7 +7,7 @@ name: Publish codejaguar-review
 # folders are never part of the package — the "files" whitelist in
 # cli/package.json (dist, bin, backend) guarantees that.
 #
-# Bun has no separate registry: `bun install -g codejaguar-review` reads from
+# Bun has no separate registry: `bun install -g codejaguar-cli` reads from
 # the same npm registry, so the npm publish below covers Bun users too.
 #
 # Required secret:
@@ -144,8 +144,9 @@ jobs:
         working-directory: cli
         run: |
           OWNER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          # GitHub Packages requires a scoped name matching the repo owner.
-          npm pkg set name="@${OWNER}/codejaguar-review"
+          # GitHub Packages requires a scoped name matching the repo owner, so
+          # the public npm `codejaguar-cli` becomes `@<owner>/codejaguar-cli` here.
+          npm pkg set name="@${OWNER}/codejaguar-cli"
           cat > .npmrc <<EOF
           @${OWNER}:registry=https://npm.pkg.github.com
           //npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}
