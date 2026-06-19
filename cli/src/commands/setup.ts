@@ -1,14 +1,14 @@
+
 /**
- * Setup & doctor commands — repair and diagnose the local Python backend.
+ * Setup & doctor commands — manage and diagnose the local Python backend.
  *
- *   jaguar setup            — reinstall the backend venv + dependencies (repair)
+ *   jaguar setup            — install/repair the backend venv + dependencies
  *   jaguar setup --force    — rebuild the venv from scratch
  *   jaguar doctor           — diagnose Python, the backend env, and services
  *
- * Setup normally happens automatically: the first command that needs the backend
- * (e.g. `jaguar review`) bootstraps the venv and installs deps on demand (see
- * services/setup.ts). These commands exist only to repair a broken environment
- * or diagnose problems — a user never has to run `setup` before anything else.
+ * The published package ships the backend source but not its Python deps, so
+ * `setup` is the explicit form of the first-run bootstrap that `jaguar review`
+ * triggers automatically (see services/setup.ts).
  */
 
 import { Command } from "commander";
@@ -23,7 +23,6 @@ import {
   verifyBackendDeps,
 } from "../services/setup.js";
 import { findBackendDir, getBackendPort, healthCheck } from "../services/backend.js";
-import { listCredentials } from "../providers/keychain.js";
 
 /**
  * Register the `setup` and `doctor` commands.
@@ -32,7 +31,7 @@ export function registerSetupCommand(program: Command): void {
   // ── jaguar setup ─────────────────────────────────────
   program
     .command("setup")
-    .description("Repair the local Python backend environment (normally set up automatically)")
+    .description("Install or repair the local Python backend environment")
     .option("--force", "Rebuild the environment from scratch")
     .action(async (options: { force?: boolean }) => {
       const backendDir = findBackendDir();
@@ -116,19 +115,6 @@ export function registerSetupCommand(program: Command): void {
         line(true, "Backend service", `running on 127.0.0.1:${port}`);
       } else {
         line(true, "Backend service", "not running (starts on demand)");
-      }
-
-      // 6. Are any provider API keys configured? Generic providers store
-      // `<name>_base_url` / `<name>_type` metadata alongside the key, so exclude
-      // those to count actual providers (mirrors `jaguar key list`).
-      const providerKeys = (await listCredentials()).filter(
-        (name) => !name.endsWith("_base_url") && !name.endsWith("_type")
-      );
-      if (providerKeys.length > 0) {
-        line(true, "Provider keys", providerKeys.join(", "));
-      } else {
-        ok = false;
-        line(false, "Provider keys", "none configured — run `jaguar key add <provider>`");
       }
 
       console.log(
