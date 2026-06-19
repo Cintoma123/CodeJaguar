@@ -7,8 +7,10 @@ Runs on localhost only. Started by the CLI on first command.
 import os
 import socket
 import sys
+import traceback
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app.api.routes import router
 
@@ -21,6 +23,24 @@ app = FastAPI(
 )
 
 app.include_router(router)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Never let an unhandled error return a blank 500.
+
+    Production 500s (wrong app dir, a missing venv dependency, a bad provider
+    key) were opaque because the response body was empty. Always include the
+    Python exception message and traceback so `JAGUAR_DEBUG=1 jaguar <cmd>` can
+    surface the real cause without inspecting backend logs.
+    """
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": str(exc),
+            "trace": traceback.format_exc(),
+        },
+    )
 
 
 @app.get("/")

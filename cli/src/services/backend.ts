@@ -2,18 +2,21 @@
  * Backend lifecycle manager.
  *
  * The backend starts automatically before any command that needs it (via
- * ensureBackend) and survives terminal closure (detached + unref), so it keeps
- * running between commands — the user never starts or restarts it by hand.
+ * ensureBackend) and survives terminal closure, so it keeps running between
+ * commands — the user never starts or restarts it by hand. Detachment is done
+ * by launching Node itself (backend-runner.js) detached + unref; that Node
+ * process owns the uvicorn child (see backend-runner.ts for why).
  *
- * Port model: the backend self-assigns a free port on startup and writes it to
- * ~/.jaguar/backend.port (and its PID to ~/.jaguar/backend.pid). The CLI only
- * ever reads these — it never picks the port itself.
+ * Port model: the detached runner self-assigns a free port on startup and
+ * writes it to ~/.jaguar/backend.port (and its own PID to
+ * ~/.jaguar/backend.pid). The CLI only ever reads these — it never picks the
+ * port itself.
  *
  * Public surface:
  * - isBackendRunning() — fast health probe; runs before every command
  * - ensureBackend()    — start-if-needed; the single pre-command entry point
  * - waitForBackend()   — poll until healthy, with a bounded timeout
- * - stopBackend()      — SIGTERM the backend (used by `jaguar stop` only)
+ * - stopBackend()      — kill the backend tree (used by `jaguar stop` only)
  * - getBackendPort() / findBackendDir() / healthCheck() — helpers
  */
 
@@ -61,24 +64,6 @@ function getBackendPid(): number | null {
     return isNaN(pid) ? null : pid;
   } catch {
     return null;
-  }
-}
-
-/**
- * Check if a process is still running.
- */
-function isProcessRunning(pid: number): boolean {
-  try {
-    // On Windows, tasklist checks if a process exists
-    execSync(`tasklist /FI "PID eq ${pid}" /NH`, { stdio: "pipe" });
-    const output = execSync(`tasklist /FI "PID eq ${pid}" /NH`, {
-      stdio: "pipe",
-    })
-      .toString()
-      .trim();
-    return output.includes(String(pid));
-  } catch {
-    return false;
   }
 }
 
@@ -191,18 +176,25 @@ async function startBackend(onStatus?: StatusFn): Promise<number> {
 
   onStatus?.("Starting backend…");
 
-  // Detached + unref so the backend outlives this CLI invocation and the
-  // terminal it was launched from. stdio is ignored — it self-daemonizes.
-  // main.py self-assigns a free port and writes ~/.jaguar/backend.{port,pid}.
-  const child = spawn(pythonPath, ["main.py"], {
-    cwd: backendDir,
+  // Launch Node itself as the detached wrapper (backend-runner.js). On Windows,
+  // detached:true on the uvicorn child does NOT survive the terminal closing,
+  // but a detached Node process does — the runner then owns the uvicorn child
+  // and allocates the port, writing ~/.jaguar/backend.{port,pid} itself.
+  // windowsHide hides the console window that would otherwise flash up.
+  const runnerPath = join(__dirname, "backend-runner.js");
+
+  const wrapper = spawn(process.execPath, [runnerPath], {
     detached: true,
     stdio: "ignore",
+    windowsHide: true,
   });
 
-  child.unref();
+  wrapper.unref();
 
-  debugLog(`Backend process started with PID ${child.pid}`);
+  // Do NOT write backend.pid here — backend-runner.js writes its own pid so the
+  // file points at the long-lived runner, not this short-lived CLI invocation.
+
+  debugLog(`Backend wrapper started with PID ${wrapper.pid}`);
 
   // Wait for the server to answer /health (throws on timeout with a message
   // that points at `jaguar doctor`).
@@ -250,10 +242,17 @@ export function findBackendDir(): string | null {
  */
 export async function stopBackend(): Promise<void> {
   const pid = getBackendPid();
-  if (pid && isProcessRunning(pid)) {
+  if (pid) {
     try {
-      execSync(`taskkill /PID ${pid} /F`, { stdio: "pipe" });
-      debugLog(`Stopped backend process PID ${pid}`);
+      if (process.platform === "win32") {
+        // /t kills the whole tree (the node runner AND its uvicorn child);
+        // /f forces it. SIGTERM is unreliable for killing processes on Windows.
+        execSync(`taskkill /pid ${pid} /f /t`, { stdio: "pipe" });
+      } else {
+        // The runner forwards SIGTERM to its uvicorn child before exiting.
+        process.kill(pid, "SIGTERM");
+      }
+      debugLog(`Stopped backend process tree for PID ${pid}`);
     } catch (e) {
       debugLog(`Failed to stop backend process PID ${pid}: ${e}`);
     }

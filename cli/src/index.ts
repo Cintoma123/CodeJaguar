@@ -30,6 +30,7 @@ import { registerProtectCommand } from "./commands/protect.js";
 import { registerSetupCommand } from "./commands/setup.js";
 import { runSplash } from "./utils/splash.js";
 import { hasSeenSplash, markSplashSeen } from "./services/config.js";
+import { checkForUpdates, getCurrentVersion } from "./services/update.js";
 
 // Create the main program
 const program = new Command();
@@ -37,7 +38,7 @@ const program = new Command();
 program
   .name("jaguar")
   .description("CodeJaguar — Local-first AI Code Review & DevSecOps CLI")
-  .version("0.1.0");
+  .version(getCurrentVersion());
 
 // Register commands
 registerKeyCommand(program);
@@ -83,6 +84,8 @@ async function main(): Promise<void> {
     markSplashSeen();
     console.clear();
     program.outputHelp();
+    // After console.clear() so the notice isn't wiped.
+    await checkForUpdates();
     return;
   }
 
@@ -90,9 +93,13 @@ async function main(): Promise<void> {
   if (isBareOrHelp) {
     if (args.length === 0) printBanner();
     program.outputHelp();
+    await checkForUpdates();
     return;
   }
 
+  // Any real command: surface an update notice (cached; network at most once a
+  // day) before handing off to the command's own output.
+  await checkForUpdates();
   program.parse(process.argv);
 }
 
