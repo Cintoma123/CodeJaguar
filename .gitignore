@@ -53,3 +53,10 @@ desktop.ini
 # ── Claude.md (AI assistant context files) ──────────
 claude.md
 **/claude.md
+CLAUDE.md
+**/CLAUDE.md
+.claude/
+
+# ── Test and temporary output files ─────────────────
+cli/jaguar-results.json
+**/jaguar-results.json

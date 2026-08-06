@@ -26,6 +26,60 @@ export function loadMemory(cwd: string): Record<string, unknown> {
   }
 }
 
+/** Severity levels a user may set as the watch-mode threshold. */
+export type WatchSeverity = "low" | "medium" | "high" | "critical";
+
+/** Watch-mode behaviour, read from the `watch` block of memory.json. */
+export interface WatchConfig {
+  /** Glob-ish patterns (relative to project root) to skip. */
+  ignore: string[];
+  /** Debounce window in ms before a saved file is reviewed. */
+  debounceMs: number;
+  /** Findings below this severity are suppressed in watch output. */
+  severityThreshold: WatchSeverity;
+}
+
+/** Defaults applied when memory.json has no `watch` block (or is absent). */
+export const DEFAULT_WATCH_CONFIG: WatchConfig = {
+  ignore: [],
+  debounceMs: 800,
+  severityThreshold: "low",
+};
+
+const VALID_SEVERITIES: WatchSeverity[] = ["low", "medium", "high", "critical"];
+
+/**
+ * Load the `watch` block from .jaguar/memory.json, falling back to defaults for
+ * any missing or malformed field. Never throws — a bad config degrades to
+ * defaults so watch mode always starts.
+ */
+export function loadWatchConfig(cwd: string): WatchConfig {
+  const memory = loadMemory(cwd);
+  const raw = memory.watch;
+  if (!raw || typeof raw !== "object") {
+    return { ...DEFAULT_WATCH_CONFIG };
+  }
+
+  const w = raw as Record<string, unknown>;
+
+  const ignore = Array.isArray(w.ignore)
+    ? w.ignore.filter((p): p is string => typeof p === "string")
+    : DEFAULT_WATCH_CONFIG.ignore;
+
+  const debounceMs =
+    typeof w.debounce_ms === "number" && w.debounce_ms >= 0
+      ? w.debounce_ms
+      : DEFAULT_WATCH_CONFIG.debounceMs;
+
+  const threshold =
+    typeof w.severity_threshold === "string" &&
+    VALID_SEVERITIES.includes(w.severity_threshold.toLowerCase() as WatchSeverity)
+      ? (w.severity_threshold.toLowerCase() as WatchSeverity)
+      : DEFAULT_WATCH_CONFIG.severityThreshold;
+
+  return { ignore, debounceMs, severityThreshold: threshold };
+}
+
 /**
  * Load rules.md from the project root.
  */

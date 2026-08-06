@@ -93,10 +93,15 @@ $ bun install -g codejaguar-cli`}
         <CodeBlock lang="bash" prompt code={`$ jaguar review`} />
         <P>
           CodeJaguar gathers your <Code>git diff</Code>, reads the changed files,
-          calls your provider, and writes findings to <Code>review.md</Code> in
-          the project root:
+          calls your provider, and prints the findings to the terminal. Add{" "}
+          <Code>--output md</Code> to also save a <Code>review.md</Code> report
+          (or <Code>--output json</Code> for <Code>review.json</Code>):
         </P>
-        <CodeBlock lang="bash" prompt code={`$ cat review.md`} />
+        <CodeBlock
+          lang="bash"
+          prompt
+          code={`$ jaguar review --output md   # terminal display + review.md`}
+        />
         <P>
           Each finding includes a severity, category, file/line reference,
           description, impact, and recommendation.
@@ -113,7 +118,43 @@ $ jaguar summary         # PR description       → pr-summary.md`}
         />
       </Section>
 
-      <Section title="6. Make reviews smarter (optional)">
+      <Section title="6. Work faster (optional)">
+        <P>
+          Three flags on <Code>jaguar review</Code> turn the one-shot review into a
+          full workflow:
+        </P>
+        <List>
+          <Li>
+            <B>Watch mode</B> — review each file automatically as you save it, live in
+            the terminal:
+          </Li>
+        </List>
+        <CodeBlock lang="bash" prompt code={`$ jaguar review --watch`} />
+        <List>
+          <Li>
+            <B>Fix mode</B> — get an exact code fix for each finding and apply it with
+            one key (originals are backed up, undo any time):
+          </Li>
+        </List>
+        <CodeBlock lang="bash" prompt code={`$ jaguar review --fix`} />
+        <List>
+          <Li>
+            <B>CI mode</B> — run on every pull request, annotate the diff, and fail the
+            build on serious findings (inside GitHub Actions):
+          </Li>
+        </List>
+        <CodeBlock
+          lang="bash"
+          prompt
+          code={`$ jaguar review --ci --fail-on high`}
+        />
+        <P>
+          See <A href="/docs/advanced">Advanced Features</A> for watch configuration,
+          the fix workflow, and a ready-to-copy GitHub Actions example.
+        </P>
+      </Section>
+
+      <Section title="7. Make reviews smarter (optional)">
         <List>
           <Li>
             <B>Repository memory</B> — describe your stack once so every review is

@@ -7,11 +7,25 @@ messages that are safe to surface to the user. Keeps API keys and stack
 traces out of the returned strings.
 """
 
+import json
+
 import httpx
 
 
 def describe_provider_error(exc: Exception) -> str:
     """Return a concise, user-facing description of a provider failure."""
+    # Non-JSON response body (e.g. the base URL points at an HTML page rather
+    # than an OpenAI-compatible API). The generic provider automatically retries
+    # with a "/v1" path, so reaching this message means neither the plain URL
+    # nor the "/v1" variant returned JSON.
+    # NB: check before ValueError, since JSONDecodeError subclasses it.
+    if isinstance(exc, json.JSONDecodeError):
+        return (
+            "The provider returned a non-JSON response. The base URL should point "
+            "at the OpenAI-compatible API root (with or without '/v1', e.g. "
+            "https://agentrouter.org or https://agentrouter.org/v1), not a web page."
+        )
+
     # Configuration problems (e.g. unknown provider, missing base_url).
     if isinstance(exc, ValueError):
         return str(exc)
@@ -23,6 +37,11 @@ def describe_provider_error(exc: Exception) -> str:
             return (
                 f"Authentication failed (HTTP {code}). The API key was rejected "
                 "— check that it is correct and has access to this model."
+            )
+        if code == 402:
+            return (
+                "Payment required (HTTP 402). Your provider account is out of "
+                "credits for this model — add credits or switch to a free model."
             )
         if code == 404:
             return (

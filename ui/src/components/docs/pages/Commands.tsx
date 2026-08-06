@@ -73,8 +73,10 @@ $ jaguar key remove deepseek`}
           maintainability problems, and refactoring opportunities.
         </P>
         <P>
-          <B>Output:</B> <Code>review.md</Code> (or <Code>review-consensus.md</Code>{" "}
-          with <Code>--consensus</Code>).
+          <B>Output:</B> findings are printed to the terminal. Pass{" "}
+          <Code>--output md</Code> to also write <Code>review.md</Code> (or{" "}
+          <Code>review-consensus.md</Code> with <Code>--consensus</Code>), or{" "}
+          <Code>--output json</Code> to write <Code>review.json</Code>.
         </P>
         <Table
           head={["Flag", "Description"]}
@@ -98,6 +100,25 @@ $ jaguar key remove deepseek`}
               <Code>--consensus</Code>,
               "Run across all configured providers, keep agreed findings.",
             ],
+            [
+              <Code>--watch</Code>,
+              "Watch mode: monitor the project and review each file as it changes. Press Ctrl+C to stop.",
+            ],
+            [
+              <Code>--fix</Code>,
+              "Propose and interactively apply a code fix for each finding.",
+            ],
+            [
+              <Code>--ci</Code>,
+              "CI mode: diff PR, emit GitHub Actions annotations, write jaguar-results.json, exit 1 on threshold.",
+            ],
+            [
+              <Code>--fail-on &lt;severity&gt;</Code>,
+              <>
+                CI mode only. Exit 1 when findings meet or exceed severity: <Code>critical</Code>,{" "}
+                <Code>high</Code> (default), <Code>medium</Code>, or <Code>none</Code>.
+              </>,
+            ],
           ]}
         />
         <CodeBlock
@@ -106,13 +127,65 @@ $ jaguar key remove deepseek`}
           code={`$ jaguar review
 $ jaguar review --provider openai --model gpt-4o
 $ jaguar review --file src/auth.ts
-$ jaguar review --consensus`}
+$ jaguar review --consensus
+$ jaguar review --watch
+$ jaguar review --fix
+$ jaguar review --ci --fail-on high`}
         />
         <P>
           Context gathered: <Code>git diff HEAD</Code>, changed-file contents
           (size-limited), recent commit messages, plus{" "}
           <Code>.jaguar/memory.json</Code> and <Code>.jaguar/rules.md</Code> if
           present.
+        </P>
+        <P>
+          <B>Watch mode</B> (<Code>--watch</Code>) monitors the project for file changes
+          and reviews each saved file automatically. Configure behavior in{" "}
+          <Code>.jaguar/memory.json</Code> under the <Code>watch</Code> block (see{" "}
+          <A href="/docs/advanced#watch-mode">Advanced Features</A>).
+        </P>
+        <P>
+          <B>Fix mode</B> (<Code>--fix</Code>) proposes exact code fixes for each finding
+          and prompts you to apply or skip them interactively. Originals are backed up to{" "}
+          <Code>~/.jaguar/backups/</Code>. Restore with <Code>jaguar fix --undo</Code>.
+        </P>
+        <P>
+          <B>CI mode</B> (<Code>--ci</Code>) diffs the PR base vs HEAD, emits GitHub
+          Actions annotations, writes <Code>jaguar-results.json</Code>, and exits with
+          code 1 when findings meet <Code>--fail-on</Code> severity (default{" "}
+          <Code>high</Code>). The API key comes from <Code>JAGUAR_API_KEY</Code> env var
+          in CI, not the keychain.
+        </P>
+      </Section>
+
+      <Section title="jaguar fix" id="fix">
+        <P>
+          Restore files from a fix-mode backup. Every time{" "}
+          <Code>jaguar review --fix</Code> applies changes, it first backs up the
+          originals to <Code>~/.jaguar/backups/&lt;timestamp&gt;/</Code>. This command
+          rolls them back.
+        </P>
+        <Table
+          head={["Flag", "Description"]}
+          rows={[
+            [
+              <Code>--undo &lt;timestamp&gt;</Code>,
+              <>
+                Restore all files from the backup created at{" "}
+                <Code>&lt;timestamp&gt;</Code> (printed after a fix session).
+              </>,
+            ],
+          ]}
+        />
+        <CodeBlock
+          lang="bash"
+          prompt
+          code={`$ jaguar fix --undo 2026-08-07T14-30-00-123Z`}
+        />
+        <P>
+          The timestamp is shown at the end of every <Code>jaguar review --fix</Code>{" "}
+          session (&quot;Undo with: jaguar fix --undo …&quot;). The restore mirrors the
+          backup&apos;s directory structure back onto your project root.
         </P>
       </Section>
 
@@ -138,6 +211,18 @@ $ jaguar review --consensus`}
                 <Code>docker</Code>, <Code>actions</Code>.
               </>,
             ],
+            [
+              <Code>--ci</Code>,
+              "CI mode: emit GitHub Actions annotations, write jaguar-results.json, exit 1 on threshold.",
+            ],
+            [
+              <Code>--fail-on &lt;severity&gt;</Code>,
+              <>
+                CI mode only. Exit 1 when findings meet or exceed severity:{" "}
+                <Code>critical</Code>, <Code>high</Code> (default),{" "}
+                <Code>medium</Code>, or <Code>none</Code>.
+              </>,
+            ],
           ]}
         />
         <CodeBlock
@@ -146,7 +231,8 @@ $ jaguar review --consensus`}
           code={`$ jaguar security
 $ jaguar security --only secrets
 $ jaguar security --only deps --provider openai --model gpt-4o
-$ jaguar security --only docker --provider anthropic`}
+$ jaguar security --only docker --provider anthropic
+$ jaguar security --ci --fail-on critical`}
         />
         <P>
           Modules: secret pattern scanner (deterministic, runs first), dependency

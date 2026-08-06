@@ -67,12 +67,17 @@ From inside a git repository with some uncommitted or committed changes:
 jaguar review
 ```
 
-CodeJaguar gathers your `git diff`, reads the changed files, calls your provider,
-and writes findings to `review.md` in the project root:
+CodeJaguar gathers your `git diff`, reads the changed files, and calls your
+provider, printing the findings to the terminal:
 
 ```bash
-cat review.md
+jaguar review
 ```
+
+Findings are severity-coloured (red `CRITICAL`/`HIGH`, yellow `MEDIUM`, blue
+`LOW`) with green recommendations and grey file/line references. To also save a
+report file, use `--output md` (writes `review.md`) or `--output json` (writes
+`review.json`).
 
 Each finding includes a severity, category, file/line reference, description,
 impact, and recommendation.
