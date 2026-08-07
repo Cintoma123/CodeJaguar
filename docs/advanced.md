@@ -85,7 +85,8 @@ Windows and `vi` elsewhere.
 ## Consensus Mode
 
 **Command:** `jaguar review --consensus`
-**Output:** `review-consensus.md`
+**Output:** terminal; add `--output md` for `review-consensus.md` or
+`--output json` for `review-consensus.json`.
 
 Consensus mode reduces false positives by running the same review across all
 configured providers and keeping only findings that **at least two** of them
@@ -119,7 +120,7 @@ Gather context
 jaguar key add openai
 jaguar key add anthropic
 jaguar review --consensus
-cat review-consensus.md
+jaguar review --consensus --output md   # terminal display + review-consensus.md
 ```
 
 ---

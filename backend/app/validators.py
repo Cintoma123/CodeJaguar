@@ -25,6 +25,18 @@ class ReviewRequest(BaseModel):
     model: str | None = None
     memory: dict = Field(default_factory=dict)
     rules: str = ""
+    # When true, the AI is asked to also produce a concrete code fix per finding
+    # (original_code / fixed_code / explanation). Off by default so ordinary
+    # reviews are unaffected.
+    fix_mode: bool = False
+
+
+class Fix(BaseModel):
+    """A concrete, apply-able code change proposed for a finding."""
+
+    original_code: str  # exact lines to replace, as they appear in the file
+    fixed_code: str  # replacement lines
+    explanation: str = ""  # one sentence on why the fix is correct
 
 
 class ReviewFinding(BaseModel):
@@ -35,6 +47,8 @@ class ReviewFinding(BaseModel):
     description: str
     impact: str
     recommendation: str
+    # Populated only in fix mode. Absent/None for ordinary reviews.
+    fix: Fix | None = None
 
     @field_validator("line", mode="before")
     @classmethod
@@ -57,6 +71,9 @@ class ReviewResponse(BaseModel):
     summary: str = ""
     provider_used: str = ""
     model_used: str = ""
+    # Set when the provider call failed (auth, network, bad model, etc.). When
+    # present the CLI treats the review as failed rather than "0 issues found".
+    error: str | None = None
 
 
 # ── Security ────────────────────────────────────────────

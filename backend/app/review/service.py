@@ -11,6 +11,73 @@ from ..validators import ReviewRequest
 from .prompts import build_review_prompt
 
 
+def _build_system_prompt(fix_mode: bool) -> str:
+    """
+    Build the review system prompt.
+
+    In fix mode each finding must additionally carry a `fix` object with the
+    exact original lines, the replacement lines, and a one-sentence rationale —
+    the CLI uses these to apply changes to disk, so `original_code` must match
+    the file verbatim.
+    """
+    if not fix_mode:
+        return (
+            "You are a senior software engineer and code reviewer. "
+            "Analyze the provided code changes and return your findings as JSON. "
+            "Return a JSON object with this exact structure:\n"
+            '{\n'
+            '  "findings": [\n'
+            '    {\n'
+            '      "severity": "HIGH|MEDIUM|LOW",\n'
+            '      "category": "Performance|Bug|Code Smell|Maintainability|Refactoring",\n'
+            '      "file": "path/to/file.ts",\n'
+            '      "line": 42,\n'
+            '      "description": "What the issue is",\n'
+            '      "impact": "Why it matters",\n'
+            '      "recommendation": "How to fix it"\n'
+            '    }\n'
+            '  ],\n'
+            '  "summary": "Brief overall assessment"\n'
+            '}\n'
+            "Return ONLY the JSON object, no markdown fences, no extra text."
+        )
+
+    return (
+        "You are a senior software engineer and code reviewer. "
+        "Analyze the provided code changes and return your findings as JSON. "
+        "For every finding you MUST also propose a concrete code fix. "
+        "Return a JSON object with this exact structure:\n"
+        '{\n'
+        '  "findings": [\n'
+        '    {\n'
+        '      "severity": "HIGH|MEDIUM|LOW",\n'
+        '      "category": "Performance|Bug|Code Smell|Maintainability|Refactoring",\n'
+        '      "file": "path/to/file.ts",\n'
+        '      "line": 42,\n'
+        '      "description": "What the issue is",\n'
+        '      "impact": "Why it matters",\n'
+        '      "recommendation": "How to fix it",\n'
+        '      "fix": {\n'
+        '        "original_code": "the exact line(s) to replace, copied verbatim from the file",\n'
+        '        "fixed_code": "the replacement line(s)",\n'
+        '        "explanation": "one sentence on why this fix is correct"\n'
+        '      }\n'
+        '    }\n'
+        '  ],\n'
+        '  "summary": "Brief overall assessment"\n'
+        '}\n'
+        "Rules for the fix object:\n"
+        "- original_code MUST be copied character-for-character from the provided "
+        "file contents, including exact indentation and whitespace, so it can be "
+        "found and replaced programmatically. Do NOT paraphrase or reformat it.\n"
+        "- Keep original_code minimal: only the lines that actually change.\n"
+        "- fixed_code must be the complete replacement for those exact lines.\n"
+        "- If you cannot produce a safe, exact fix for a finding, omit the fix "
+        "field for that finding rather than guessing.\n"
+        "Return ONLY the JSON object, no markdown fences, no extra text."
+    )
+
+
 async def run_review(body: ReviewRequest, api_key: str, base_url: str | None = None, model: str | None = None) -> dict:
     """
     Run a code review using the specified provider.
@@ -35,34 +102,17 @@ async def run_review(body: ReviewRequest, api_key: str, base_url: str | None = N
             model=model,
         )
     except Exception as e:
+        message = describe_provider_error(e)
         return {
             "findings": [],
-            "summary": f"Error: {describe_provider_error(e)}",
+            "summary": f"Error: {message}",
             "provider_used": body.provider,
             "model_used": "",
+            "error": message,
         }
 
-    # System prompt for code review
-    system = (
-        "You are a senior software engineer and code reviewer. "
-        "Analyze the provided code changes and return your findings as JSON. "
-        "Return a JSON object with this exact structure:\n"
-        '{\n'
-        '  "findings": [\n'
-        '    {\n'
-        '      "severity": "HIGH|MEDIUM|LOW",\n'
-        '      "category": "Performance|Bug|Code Smell|Maintainability|Refactoring",\n'
-        '      "file": "path/to/file.ts",\n'
-        '      "line": 42,\n'
-        '      "description": "What the issue is",\n'
-        '      "impact": "Why it matters",\n'
-        '      "recommendation": "How to fix it"\n'
-        '    }\n'
-        '  ],\n'
-        '  "summary": "Brief overall assessment"\n'
-        '}\n'
-        "Return ONLY the JSON object, no markdown fences, no extra text."
-    )
+    # System prompt for code review (fix-aware when the CLI requests fix mode).
+    system = _build_system_prompt(body.fix_mode)
 
     # Enforce the token budget so we never send an oversized prompt.
     prompt, _truncated = enforce_budget(prompt, system, body.provider)
@@ -76,11 +126,13 @@ async def run_review(body: ReviewRequest, api_key: str, base_url: str | None = N
             temperature=0.3,
         )
     except Exception as e:
+        message = describe_provider_error(e)
         return {
             "findings": [],
-            "summary": f"Error: {describe_provider_error(e)}",
+            "summary": f"Error: {message}",
             "provider_used": body.provider,
             "model_used": "",
+            "error": message,
         }
 
     # Parse the response

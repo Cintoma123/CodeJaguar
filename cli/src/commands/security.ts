@@ -21,9 +21,16 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 
-import { getCredential } from "../providers/keychain.js";
 import { ensureBackend, getBackendPort } from "../services/backend.js";
-import { getDefaultProvider, resolveBaseUrl, BUILT_IN_PROVIDERS } from "../services/provider.js";
+import { getDefaultProvider, resolveBaseUrl, BUILT_IN_PROVIDERS, getProviderKey } from "../services/provider.js";
+import {
+  ciBaseRef,
+  printAnnotations,
+  writeResultsJson,
+  failThresholdMet,
+  parseFailOn,
+  type CIFinding,
+} from "../services/ci.js";
 import { buildSecurityMarkdown } from "../services/output.js";
 import { startScan } from "../utils/loader.js";
 import { describeRequestError } from "../utils/errors.js";
@@ -107,9 +114,17 @@ export function registerSecurityCommand(program: Command): void {
     .command("security")
     .description("Comprehensive security scan across source, dependencies, and infrastructure")
     .option("--provider <name>", "AI provider to use (openai, anthropic, etc.)")
-    .option("--model <name>", "Model to use (e.g. gpt-4o, claude-sonnet-4-20250514, owl-alpha)")
+    .option("--model <name>", "Model to use (e.g. gpt-4o, [REDACTED], owl-alpha)")
     .option("--only <module>", "Run only a specific scan module (secrets, deps, docker, actions)")
-    .action(async (options: { provider?: string; model?: string; only?: string }) => {
+    .option("--ci", "CI mode: emit GitHub Actions annotations, write jaguar-results.json")
+    .option("--fail-on <severity>", "Exit code 1 when findings meet or exceed severity (critical|high|medium|none)", "high")
+    .action(async (options: { provider?: string; model?: string; only?: string; ci?: boolean; failOn?: string }) => {
+      // CI mode has its own execution path — branch before the standard spinner.
+      if (options.ci) {
+        await runSecurityCI(options.provider, options.model, options.only, options.failOn ?? "high");
+        return;
+      }
+
       const spinner = startScan("jaguar security", "running 8 security modules...");
 
       try {
@@ -125,8 +140,8 @@ export function registerSecurityCommand(program: Command): void {
           process.exit(1);
         }
 
-        // 2. Get API key from keychain
-        const apiKey = await getCredential(provider);
+        // 2. Get API key from keychain or CI env
+        const apiKey = await getProviderKey(provider);
         if (!apiKey) {
           spinner.fail(
             chalk.red(
@@ -286,4 +301,191 @@ export function registerSecurityCommand(program: Command): void {
         process.exit(1);
       }
     });
+}
+
+/**
+ * CI mode for security scan — emit GitHub Actions annotations, write
+ * jaguar-results.json, and exit with code 1 when findings meet threshold.
+ */
+async function runSecurityCI(
+  providerOpt: string | undefined,
+  model: string | undefined,
+  only: string | undefined,
+  failOnRaw: string
+): Promise<void> {
+  const cwd = process.cwd();
+
+  // Parse and validate --fail-on early.
+  const failOn = parseFailOn(failOnRaw);
+  if (!failOn) {
+    console.error(`Invalid --fail-on value "${failOnRaw}". Use: critical, high, medium, or none.`);
+    process.exit(1);
+  }
+
+  console.log("Running jaguar security in CI mode...");
+
+  // Resolve provider.
+  const provider = providerOpt ?? (await getDefaultProvider());
+  if (!provider) {
+    console.error("No provider configured. Set JAGUAR_API_KEY or run `jaguar key add <provider>`.");
+    process.exit(1);
+  }
+
+  // CI key must come from JAGUAR_API_KEY env var.
+  const apiKey = await getProviderKey(provider);
+  if (!apiKey) {
+    console.error(
+      `No API key available. In CI, set the JAGUAR_API_KEY environment variable.`
+    );
+    process.exit(1);
+  }
+
+  const baseUrl = await resolveBaseUrl(provider);
+  if (!BUILT_IN_PROVIDERS.includes(provider.toLowerCase()) && !baseUrl) {
+    console.error(
+      `No base URL configured for generic provider "${provider}". ` +
+        `Set JAGUAR_BASE_URL environment variable.`
+    );
+    process.exit(1);
+  }
+
+  // Collect files (same as standard mode).
+  console.log("Collecting project files...");
+
+  const source_files = collect_files(
+    ["**/*.ts", "**/*.js", "**/*.py", "**/*.go", "**/*.rs", "**/*.java", "**/*.rb", "**/*.php"],
+    cwd,
+    100000,
+  );
+
+  const dependency_files = collect_files(
+    [
+      "package.json", "package-lock.json", "bun.lock", "yarn.lock",
+      "requirements.txt", "poetry.lock", "pyproject.toml", "Pipfile.lock",
+      "Gemfile.lock", "go.mod", "go.sum", "Cargo.toml", "Cargo.lock",
+      "composer.json", "composer.lock", "pom.xml", "build.gradle", "build.gradle.kts",
+      "*.csproj", "packages.lock.json",
+    ],
+    cwd,
+  );
+
+  const docker_files = collect_files(
+    ["Dockerfile", "Dockerfile.*", "**/Dockerfile*"],
+    cwd,
+  );
+
+  const compose_files = collect_files(
+    [
+      "docker-compose.yml", "docker-compose.*.yml",
+      "compose.yml", "compose.*.yml",
+    ],
+    cwd,
+  );
+
+  const action_files = collect_files(
+    [".github/workflows/*.yml", ".github/workflows/*.yaml"],
+    cwd,
+  );
+
+  const env_files = collect_files(
+    [".env", ".env.*", ".env.example", ".env.template", ".env.local", ".env.production"],
+    cwd,
+  );
+
+  const gitignore = read_file_by_name(".gitignore", cwd);
+
+  console.log("Starting backend...");
+
+  // Bring up backend.
+  try {
+    await ensureBackend();
+  } catch (error: unknown) {
+    console.error(`Failed to start backend: ${describeRequestError(error)}`);
+    process.exit(1);
+  }
+
+  const port = getBackendPort();
+  if (!port) {
+    console.error("Backend did not start.");
+    process.exit(1);
+  }
+
+  console.log(`Running security scan with ${provider}...`);
+  const scan_modules = only ? [only] : ["all"];
+
+  // Call backend.
+  const response = await axios.post(
+    `http://127.0.0.1:${port}/security`,
+    {
+      source_files: source_files.map((f) => ({ path: f.path, content: f.content })),
+      dependency_files: dependency_files.map((f) => ({ path: f.path, content: f.content })),
+      docker_files: docker_files.map((f) => ({ path: f.path, content: f.content })),
+      compose_files: compose_files.map((f) => ({ path: f.path, content: f.content })),
+      action_files: action_files.map((f) => ({ path: f.path, content: f.content })),
+      env_files: env_files.map((f) => ({ path: f.path, content: f.content })),
+      gitignore,
+      provider,
+      base_url: baseUrl,
+      model,
+      scan_modules,
+      memory: {},
+      rules: "",
+    },
+    {
+      headers: {
+        "X-Provider-Key": apiKey,
+        "Content-Type": "application/json",
+      },
+      timeout: 180000,
+    }
+  );
+
+  const result = response.data as {
+    findings: Array<{
+      severity: string;
+      category: string;
+      module: string;
+      file: string;
+      line?: number;
+      description: string;
+      impact: string;
+      recommendation: string;
+    }>;
+    stats: {
+      critical: number;
+      high: number;
+      medium: number;
+      low: number;
+    };
+    provider_used: string;
+  };
+
+  const findings = result.findings;
+  console.log(`Found ${findings.length} issue(s).`);
+
+  // Convert findings to CI format.
+  const ciFindings: CIFinding[] = findings.map((f) => ({
+    severity: f.severity,
+    category: f.category,
+    file: f.file,
+    line: f.line ?? null,
+    description: f.description,
+    recommendation: f.recommendation,
+  }));
+
+  // Emit GitHub Actions annotations to stdout.
+  printAnnotations(ciFindings);
+
+  // Write jaguar-results.json.
+  writeResultsJson(cwd, "security", ciFindings, {
+    provider: result.provider_used,
+    model: model ?? "",
+    generatedAt: new Date().toISOString(),
+  });
+
+  console.log("jaguar-results.json written.");
+
+  // Exit with code 1 if findings meet threshold, 0 otherwise.
+  const shouldFail = failThresholdMet(ciFindings, failOn);
+  process.exit(shouldFail ? 1 : 0);
 }

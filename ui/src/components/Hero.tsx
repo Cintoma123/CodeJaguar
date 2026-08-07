@@ -12,12 +12,15 @@ export function Hero() {
   return (
     <section
       id="install"
-      className="mx-auto grid max-w-6xl items-center gap-12 px-5 pt-28 pb-16 lg:grid-cols-[45fr_55fr] lg:gap-10 lg:pt-36 lg:pb-24"
+      className="relative isolate mx-auto grid max-w-6xl items-center gap-12 px-5 pt-28 pb-16 lg:grid-cols-[45fr_55fr] lg:gap-10 lg:pt-36 lg:pb-24"
     >
+      {/* Ambient light source — faint jaguar-green glow behind the hero. */}
+      <div aria-hidden className="hero-glow pointer-events-none absolute inset-0 -z-10" />
+
       {/* Left column */}
       <div className="fade-up flex flex-col items-start">
         <span className="border-border-dim text-text-secondary mb-6 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs">
-          <span className="bg-jaguar h-1.5 w-1.5 rounded-full" />
+          <span className="bg-jaguar pulse-dot h-1.5 w-1.5 rounded-full" />
           <span className="font-mono">v1.0.0 · now on npm</span>
         </span>
 
@@ -40,10 +43,13 @@ export function Hero() {
         <div className="mt-7 flex flex-wrap items-center gap-3">
           <a
             href="/docs"
-            className="bg-jaguar hover:bg-jaguar-dim flex items-center gap-1.5 rounded-md px-5 py-2.5 text-sm font-medium text-term-black transition-colors"
+            className="group bg-jaguar hover:bg-jaguar-dim flex items-center gap-1.5 rounded-md px-5 py-2.5 text-sm font-medium text-term-black transition-colors"
           >
             Get started
-            <ArrowRight size={16} />
+            <ArrowRight
+              size={16}
+              className="transition-transform duration-200 group-hover:translate-x-0.5"
+            />
           </a>
           <a
             href={GITHUB_URL}

@@ -3,6 +3,7 @@
  */
 
 import { getCredential, listCredentials } from "../providers/keychain.js";
+import { isCI, getCIKey } from "./ci.js";
 
 /**
  * Get the default provider from keychain.
@@ -34,12 +35,34 @@ export async function getDefaultProvider(): Promise<string | null> {
 export const BUILT_IN_PROVIDERS = ["openai", "anthropic", "gemini", "deepseek"];
 
 /**
+ * Resolve the provider API key.
+ *
+ * In CI there is no OS keychain, so the key comes from the JAGUAR_API_KEY env
+ * var (never written to disk). Outside CI it comes from the encrypted keychain.
+ */
+export async function getProviderKey(provider: string): Promise<string | null> {
+  if (isCI()) {
+    return getCIKey();
+  }
+  return await getCredential(provider);
+}
+
+/**
  * Validate that a generic provider has a base_url configured.
  * Returns the base_url or null if missing.
+ *
+ * In CI (no keychain), a generic provider's base_url may be supplied via the
+ * JAGUAR_BASE_URL env var instead.
  */
 export async function resolveBaseUrl(provider: string): Promise<string | null> {
   if (BUILT_IN_PROVIDERS.includes(provider.toLowerCase())) {
     return null; // Built-in providers don't need a base_url
+  }
+  if (isCI()) {
+    const envBase = process.env.JAGUAR_BASE_URL;
+    if (envBase && envBase.length > 0) {
+      return envBase;
+    }
   }
   return await getCredential(`${provider}_base_url`);
 }

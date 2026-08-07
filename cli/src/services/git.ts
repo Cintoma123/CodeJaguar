@@ -69,6 +69,28 @@ export function getFullDiff(baseBranch: string, cwd?: string): string {
 }
 
 /**
+ * Get the diff for a single file (staged + unstaged changes against HEAD).
+ *
+ * Used by watch mode, which reviews one changed file at a time rather than the
+ * whole working tree. For an untracked file (never committed, so `git diff HEAD`
+ * yields nothing) we fall back to `git diff --no-index /dev/null <file>`, which
+ * renders the entire file as an addition — the same shape the backend expects.
+ * `git diff --no-index` exits non-zero when there IS a diff, so we tolerate a
+ * non-empty result from the catch path via the inner git() swallow.
+ */
+export function getFileDiff(filePath: string, cwd?: string): string {
+  // Quote the path so spaces / special chars survive the shell.
+  const tracked = git(`diff HEAD -- "${filePath}"`, cwd);
+  if (tracked) return tracked;
+
+  // Untracked (or unchanged) file: try rendering it as a full addition.
+  // NUL device differs per platform; git accepts /dev/null on both when using
+  // --no-index, but Windows also honours the literal "nul".
+  const nullDevice = process.platform === "win32" ? "nul" : "/dev/null";
+  return git(`diff --no-index -- "${nullDevice}" "${filePath}"`, cwd);
+}
+
+/**
  * Get the list of changed files.
  */
 export function getChangedFiles(since?: string, cwd?: string): string[] {

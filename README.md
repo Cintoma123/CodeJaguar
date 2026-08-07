@@ -76,13 +76,14 @@ jaguar key add openai
 # 2. Make some code changes, then review them
 jaguar review
 
-# 3. Open the generated report
-cat review.md
+# 3. Read the findings right in the terminal (or save them with --output md)
 ```
 
-That's it. Reviews, security scans, architecture analysis, and PR summaries are
-written to Markdown files in your project root — not dumped to the terminal — so
-you can read, commit, or share them.
+That's it. Findings are printed to the terminal with severity-coloured output.
+Pass `--output md` (writes `review.md`) or `--output json` (writes `review.json`)
+to also save a report file. Reviews, security scans, architecture analysis, and
+PR summaries are written to Markdown files in your project root — not dumped to
+the terminal — so you can read, commit, or share them.
 
 ---
 
@@ -91,7 +92,7 @@ you can read, commit, or share them.
 | Command | Description | Output file |
 |---------|-------------|-------------|
 | `jaguar key` | Manage provider API keys (BYOK) | — |
-| `jaguar review` | Review code changes for bugs, smells, performance | `review.md` |
+| `jaguar review` | Review code changes for bugs, smells, performance | terminal (`--output md` → `review.md`) |
 | `jaguar security` | Scan source, deps, Docker, Actions, secrets | `security-*.md` |
 | `jaguar architecture` | Analyze repository structure | `architecture.md` |
 | `jaguar summary` | Generate a GitHub-ready PR summary | `pr-summary.md` |

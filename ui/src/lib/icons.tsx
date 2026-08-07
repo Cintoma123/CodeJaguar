@@ -190,6 +190,37 @@ export function Refresh(props: IconProps) {
   );
 }
 
+export function Eye(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M2 12c1-2 4.5-6 10-6s9 4 10 6c-1 2-4.5 6-10 6s-9-4-10-6z" />
+      <circle cx="12" cy="12" r="3" />
+    </Base>
+  );
+}
+
+export function Wand(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="m6 21 12-12" />
+      <path d="M15 6.5 17.5 9" />
+      <path d="M14 3v3M20 9h3M18.5 4.5 20 6M4 14h3M5.5 11.5 7 13" />
+    </Base>
+  );
+}
+
+export function Pipeline(props: IconProps) {
+  return (
+    <Base {...props}>
+      <circle cx="6" cy="6" r="2.5" />
+      <circle cx="6" cy="18" r="2.5" />
+      <circle cx="18" cy="12" r="2.5" />
+      <path d="M6 8.5v7" />
+      <path d="M8.5 6H13a2.5 2.5 0 0 1 2.5 2.5v1M8.5 18H13a2.5 2.5 0 0 0 2.5-2.5v-1" />
+    </Base>
+  );
+}
+
 export function Copy(props: IconProps) {
   return (
     <Base {...props}>

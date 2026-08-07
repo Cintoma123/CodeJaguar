@@ -10,6 +10,7 @@ import time
 
 import httpx
 
+from ..provider_errors import describe_provider_error
 from .base import BaseProvider
 
 
@@ -84,7 +85,7 @@ class AnthropicProvider(BaseProvider):
             return {
                 "success": False,
                 "provider": self.name,
-                "error": str(e),
+                "error": describe_provider_error(e),
                 "latency_ms": latency_ms,
             }
         except Exception as e:
@@ -92,6 +93,6 @@ class AnthropicProvider(BaseProvider):
             return {
                 "success": False,
                 "provider": self.name,
-                "error": str(e),
+                "error": describe_provider_error(e),
                 "latency_ms": latency_ms,
             }

@@ -1,7 +1,7 @@
 {
   "name": "codejaguar-cli",
-  "version": "0.1.1",
-  "description": "Local-first AI Code Review and DevSecOps CLI",
+  "version": "2.0.0",
+  "description": "Local-first AI Code Review and DevSecOps CLI with Watch Mode, Auto-Fix, and CI Integration",
   "main": "dist/index.js",
   "bin": {
     "jaguar": "./bin/jaguar"
@@ -45,6 +45,7 @@
   "dependencies": {
     "axios": "^1.17.0",
     "chalk": "^5.6.2",
+    "chokidar": "^4.0.3",
     "commander": "^15.0.0",
     "conf": "^13.1.0",
     "figlet": "^1.11.0",

@@ -1,5 +1,5 @@
 import { Reveal } from "./Reveal";
-import { Code, Shield, Layers, PullRequest, Lock, Consensus } from "@/lib/icons";
+import { Code, Shield, Layers, PullRequest, Lock, Consensus, Eye, Wand, Pipeline } from "@/lib/icons";
 
 const FEATURES = [
   {
@@ -22,6 +22,27 @@ const FEATURES = [
     bg: "bg-high/10",
     title: "Architecture review",
     desc: "Circular deps, layer violations, and structural drift detection.",
+  },
+  {
+    Icon: Eye,
+    color: "text-jaguar",
+    bg: "bg-jaguar/10",
+    title: "Watch mode",
+    desc: "Reviews each file live as you save it — a co-pilot in your terminal.",
+  },
+  {
+    Icon: Wand,
+    color: "text-prompt",
+    bg: "bg-prompt/10",
+    title: "Fix mode",
+    desc: "Proposes an exact code fix per finding and applies it with one key.",
+  },
+  {
+    Icon: Pipeline,
+    color: "text-medium",
+    bg: "bg-medium/10",
+    title: "CI integration",
+    desc: "Annotates PRs in GitHub Actions and fails the build on serious findings.",
   },
   {
     Icon: PullRequest,
@@ -61,8 +82,9 @@ export function FeatureGrid() {
           A senior engineer in your terminal
         </h2>
         <p className="text-text-secondary mt-3 max-w-xl text-base leading-7">
-          One CLI, eight commands. Every report is written to a Markdown file in
-          your project root — never dumped to stdout.
+          One CLI, one workflow — review, fix, watch, secure, and ship. Every
+          report is written to a Markdown file in your project root, never dumped
+          to stdout.
         </p>
       </Reveal>
 

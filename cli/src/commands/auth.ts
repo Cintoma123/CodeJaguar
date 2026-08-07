@@ -7,7 +7,6 @@
  *   jaguar key test <provider>  — Test provider connectivity
  *   jaguar key remove <provider> — Remove a stored key
  */
-
 import { Command } from "commander";
 import chalk from "chalk";
 import axios from "axios";

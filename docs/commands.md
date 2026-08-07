@@ -38,24 +38,177 @@ is treated as a generic OpenAI-compatible provider. See [providers.md](providers
 Analyze recent code changes for bugs, code smells, performance issues,
 maintainability problems, and refactoring opportunities.
 
-**Output:** `review.md` (or `review-consensus.md` with `--consensus`).
+**Output:** findings are printed to the terminal. Pass `--output md` to also
+write `review.md` (or `review-consensus.md` with `--consensus`), or
+`--output json` to write `review.json` (`review-consensus.json` with consensus).
 
 | Flag | Description |
 |------|-------------|
 | `--provider <name>` | AI provider to use. Defaults to your configured/default provider. |
-| `--model <name>` | Specific model (e.g. `gpt-4o`, `claude-sonnet-4-20250514`). |
+| `--model <name>` | Specific model (e.g. `gpt-4o`, `[REDACTED]`). |
 | `--file <path>` | Review a single file instead of the git diff. |
 | `--consensus` | Run across all configured providers, keep agreed findings. |
+| `--watch` | Watch the project and review each file as you save it (streams to the terminal). |
+| `--fix` | After the review, propose a code fix per finding and apply it interactively. |
+| `--output <format>` | Also save the report to a file: `md` or `json`. Defaults to terminal-only. |
+| `--ci` | CI mode: diff PR, emit GitHub Actions annotations, write jaguar-results.json. |
+| `--fail-on <severity>` | Exit code 1 when findings meet or exceed severity: `critical`, `high`, `medium`, or `none`. Default: `high`. |
 
 ```bash
 jaguar review
-jaguar review --provider openai --model gpt-4o
 jaguar review --file src/auth.ts
 jaguar review --consensus
+jaguar review --watch
+jaguar review --fix
+jaguar review --output md      # terminal display + review.md
+jaguar review --output json    # terminal display + review.json
 ```
+
+Findings are coloured by severity: red for `CRITICAL`/`HIGH`, yellow for
+`MEDIUM`, blue for `LOW`; recommendations are green, and file/line references
+are grey. An existing `review.md` is never deleted automatically — the file is
+only touched when `--output` is given.
 
 Context gathered: `git diff HEAD`, changed-file contents (size-limited), recent
 commit messages, plus `.jaguar/memory.json` and `.jaguar/rules.md` if present.
+
+### Watch mode (`--watch`)
+
+Runs continuously and reviews a file the moment you save it, streaming findings
+to the terminal (no `review.md` is written). Press `Ctrl+C` to stop — a summary
+of the session's findings is printed on exit.
+
+- Reviews a **single-file diff** per change (not the whole tree), so results are
+  fast and focused. Rapid consecutive saves are debounced into one review.
+- Always ignores `node_modules/`, `dist/`, `.git/`, `.jaguar/`, binary files,
+  and files larger than 500 KB.
+
+Configure watch behaviour in the `watch` block of `.jaguar/memory.json`:
+
+```json
+{
+  "watch": {
+    "ignore": ["dist/", "*.test.ts"],
+    "debounce_ms": 800,
+    "severity_threshold": "medium"
+  }
+}
+```
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `ignore` | `[]` | Extra glob patterns to skip (relative to project root). Supports `*`, `**`, and trailing `/` for a directory. |
+| `debounce_ms` | `800` | Wait this long after the last save before reviewing. |
+| `severity_threshold` | `low` | Suppress findings below this level while watching. E.g. `medium` hides `LOW` findings to reduce noise. Values: `low`, `medium`, `high`, `critical`. |
+
+### Fix mode (`--fix`)
+
+Runs a normal review (printed to the terminal), then walks you through each finding
+that has a proposed fix, showing a coloured diff and prompting before it touches
+any file:
+
+```
+Apply this fix? (y)es · (n)o · (s)kip all · (q)uit
+```
+
+- **Backup first.** Before a file is modified it is copied to
+  `~/.jaguar/backups/<timestamp>/<original/path>`. The backup location and an
+  undo hint are printed when the session ends.
+- **Exact-match only.** A fix is applied only if the reviewer's `original_code`
+  is found character-for-character (line endings normalised) in the file. If it
+  can't be located unambiguously, the fix is **skipped**, never guessed.
+- **Staleness guard.** If a file was modified after the review started, its fix
+  is skipped — line numbers may have shifted. Re-run `jaguar review --fix`.
+- **Line endings preserved.** A CRLF file stays CRLF after a fix; an LF file
+  stays LF.
+- **The report reflects the fix session.** After the session, the report is
+  re-printed with each finding tagged `✓ Fixed`, `— Skipped`, or `✗ Failed`.
+  With `--output md`/`--output json`, the saved file is re-written so it stays an
+  accurate record of what was found *and* what was done — the report never goes
+  stale against the code you just changed.
+
+`--fix` cannot be combined with `--consensus` (fixes come from one provider's
+exact original code, which consensus dedup discards).
+
+To reverse an applied session, see [`jaguar fix`](#jaguar-fix) below.
+
+### CI / GitHub Actions (`--ci`)
+
+Run `jaguar review --ci` inside a GitHub Actions workflow to diff the PR
+(base branch vs HEAD), emit inline annotations, write `jaguar-results.json`, and
+control the job's exit code based on findings.
+
+| Flag | Description |
+|------|-------------|
+| `--ci` | CI mode: diff PR, emit annotations, write jaguar-results.json. |
+| `--fail-on <severity>` | Exit code 1 when findings meet or exceed severity. Values: `critical`, `high` (default), `medium`, `none`. |
+
+**Environment variables:**
+
+- `JAGUAR_API_KEY` — Provider API key (required; the OS keychain isn't available in CI).
+- `GITHUB_BASE_REF` — PR target branch (auto-set by GitHub Actions).
+- `GITHUB_HEAD_REF` — PR source branch (auto-set by GitHub Actions).
+- `JAGUAR_BASE_URL` — Base URL for generic providers (optional; built-in providers don't need it).
+
+**What it does:**
+
+1. Diffs `${GITHUB_BASE_REF}...HEAD` (falls back to `main...HEAD`).
+2. Reviews the changed files.
+3. Emits GitHub Actions workflow commands to stdout:
+   - `::error` for `CRITICAL` and `HIGH` findings
+   - `::warning` for `MEDIUM`
+   - `::notice` for `LOW`
+4. Writes `jaguar-results.json` (machine-readable findings + metadata).
+5. Exits with code `1` if any finding meets or exceeds `--fail-on` threshold, `0` otherwise.
+
+The annotations appear inline on the PR diff in the Files Changed tab.
+
+**Example workflow:**
+
+```yaml
+name: Code Review
+on: pull_request
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for git diff
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install CodeJaguar
+        run: npm install -g codejaguar-cli
+
+      - name: Run review
+        run: jaguar review --ci --provider openai --fail-on high
+        env:
+          JAGUAR_API_KEY: ${{ secrets.JAGUAR_API_KEY }}
+```
+
+`--ci` is mutually exclusive with `--watch`, `--fix`, and `--consensus`.
+
+---
+
+## `jaguar fix`
+
+Restore files changed by a `jaguar review --fix` session from their backup.
+
+| Flag | Description |
+|------|-------------|
+| `--undo <timestamp>` | Restore every file backed up under this timestamp to its original contents. |
+
+```bash
+jaguar fix --undo 2026-07-31T14-30-00-123Z
+```
+
+The `<timestamp>` is the one printed at the end of a `--fix` session (the folder
+name under `~/.jaguar/backups/`). Every file in that backup is written back to
+its original project-relative location.
 
 ---
 
@@ -71,6 +224,8 @@ Docker Compose, GitHub Actions, environment files, `.gitignore`, and secrets.
 | `--provider <name>` | AI provider to use. |
 | `--model <name>` | Specific model. |
 | `--only <module>` | Run a single module: `secrets`, `deps`, `docker`, `actions`. |
+| `--ci` | CI mode: emit GitHub Actions annotations, write jaguar-results.json. |
+| `--fail-on <severity>` | Exit code 1 when findings meet or exceed severity: `critical`, `high` (default), `medium`, or `none`. |
 
 ```bash
 jaguar security
@@ -83,6 +238,53 @@ Modules: secret pattern scanner (deterministic, runs first), dependency CVE
 analysis, Dockerfile checks, Docker Compose checks, GitHub Actions checks, `.env`
 analysis, `.gitignore` gap analysis, and AI-powered contextual source review.
 A CRITICAL secret short-circuits the scan and is reported immediately.
+
+### CI / GitHub Actions (`--ci`)
+
+Run `jaguar security --ci` inside a GitHub Actions workflow to scan the project,
+emit inline annotations, write `jaguar-results.json`, and control the job's exit
+code based on findings.
+
+**Environment variables:**
+
+- `JAGUAR_API_KEY` — Provider API key (required in CI).
+- `JAGUAR_BASE_URL` — Base URL for generic providers (optional).
+
+**What it does:**
+
+1. Scans all source files, dependencies, Docker files, GitHub Actions, and environment files.
+2. Emits GitHub Actions workflow commands to stdout (same format as review: `::error` for CRITICAL/HIGH, `::warning` for MEDIUM, `::notice` for LOW).
+3. Writes `jaguar-results.json` with all findings and metadata.
+4. Exits with code `1` if any finding meets or exceeds `--fail-on` threshold, `0` otherwise.
+
+**Example workflow:**
+
+```yaml
+name: Security Scan
+on: [push, pull_request]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install CodeJaguar
+        run: npm install -g codejaguar-cli
+
+      - name: Run security scan
+        run: jaguar security --ci --provider openai --fail-on critical
+        env:
+          JAGUAR_API_KEY: ${{ secrets.JAGUAR_API_KEY }}
+```
+
+Both `jaguar review --ci` and `jaguar security --ci` write `jaguar-results.json`.
+If you run both in the same job, parse and upload each result before the next
+overwrites it, or rename the output between steps.
 
 ---
 
@@ -195,48 +397,6 @@ jaguar protect --remove
 
 CRITICAL/HIGH secret matches block the commit; MEDIUM matches warn but allow it.
 Bypass with `git commit --no-verify`.
-
----
-
-## `jaguar doctor`
-
-Diagnose your CodeJaguar setup. Run this first whenever a command fails to start
-the backend — it prints a clear pass/fail for each part of the environment and
-tells you how to fix anything that's broken.
-
-| Check | What it verifies |
-|-------|------------------|
-| Backend source | The bundled Python backend is present in the package. |
-| System Python | A Python 3.10+ interpreter is on your PATH (used to build the venv). |
-| Backend venv | The isolated environment exists at `~/.jaguar/venv`. |
-| Dependencies | fastapi, uvicorn, httpx, keyring, and pydantic import cleanly. |
-| Backend service | Whether a backend is currently running (it starts on demand). |
-| Provider keys | At least one provider API key is configured. |
-
-```bash
-jaguar doctor
-```
-
----
-
-## `jaguar setup`
-
-> You normally never run this. The first command that needs the backend (e.g.
-> `jaguar review`) creates the Python environment and installs dependencies
-> automatically. `setup` exists only to repair a broken environment.
-
-Reinstall or rebuild the local Python backend environment. Use it when
-`jaguar doctor` reports a broken venv or missing dependencies.
-
-| Flag | Description |
-|------|-------------|
-| *(none)* | Reinstall the venv and dependencies if they're missing or out of date. |
-| `--force` | Delete `~/.jaguar/venv` and rebuild it from scratch. |
-
-```bash
-jaguar setup           # repair a broken environment
-jaguar setup --force   # rebuild the venv from scratch
-```
 
 ---
 

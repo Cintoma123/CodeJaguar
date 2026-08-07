@@ -10,6 +10,7 @@ import time
 
 import httpx
 
+from ..provider_errors import describe_provider_error
 from .base import BaseProvider
 
 
@@ -71,7 +72,7 @@ class OpenAIProvider(BaseProvider):
             return {
                 "success": False,
                 "provider": self.name,
-                "error": str(e),
+                "error": describe_provider_error(e),
                 "latency_ms": latency_ms,
             }
         except Exception as e:
@@ -79,6 +80,6 @@ class OpenAIProvider(BaseProvider):
             return {
                 "success": False,
                 "provider": self.name,
-                "error": str(e),
+                "error": describe_provider_error(e),
                 "latency_ms": latency_ms,
             }

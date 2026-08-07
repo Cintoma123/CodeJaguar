@@ -28,6 +28,7 @@ import { registerMemoryCommand } from "./commands/memory.js";
 import { registerRulesCommand } from "./commands/rules.js";
 import { registerProtectCommand } from "./commands/protect.js";
 import { registerSetupCommand } from "./commands/setup.js";
+import { registerFixCommand } from "./commands/fix.js";
 import { runSplash } from "./utils/splash.js";
 import { hasSeenSplash, markSplashSeen } from "./services/config.js";
 import { checkForUpdates, getCurrentVersion } from "./services/update.js";
@@ -50,6 +51,7 @@ registerMemoryCommand(program);
 registerRulesCommand(program);
 registerProtectCommand(program);
 registerSetupCommand(program);
+registerFixCommand(program);
 
 /**
  * Print the figlet banner shown for a bare `jaguar` invocation.
